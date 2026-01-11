@@ -72,7 +72,10 @@ interface IMorphoBase {
 
     /// @notice Whether `authorized` is authorized to modify `authorizer`'s position on all markets.
     /// @dev Anyone is authorized to modify their own positions, regardless of this variable.
-    function isAuthorized(address authorizer, address authorized) external view returns (bool);
+    function isAuthorized(
+        address authorizer,
+        address authorized
+    ) external view returns (bool);
 
     /// @notice The `authorizer`'s current nonce. Used to prevent replay attacks with EIP-712 signatures.
     function nonce(address authorizer) external view returns (uint256);
@@ -100,6 +103,16 @@ interface IMorphoBase {
     /// @dev Modifying the fee recipient will allow the new recipient to claim any pending fees not yet accrued. To
     /// ensure that the current recipient receives all due fees, accrue interest manually prior to making any changes.
     function setFeeRecipient(address newFeeRecipient) external;
+
+    /// @notice Sets the whitelist status of `borrower` for uncollateralized borrowing on market `id`.
+    /// @param id The market id.
+    /// @param borrower The borrower address.
+    /// @param whitelisted The new whitelist status.
+    function setUncollateralizedBorrower(
+        Id id,
+        address borrower,
+        bool whitelisted
+    ) external;
 
     /// @notice Creates the market `marketParams`.
     /// @dev Here is the list of assumptions on the market's dependencies (tokens, IRM and oracle) that guarantees
@@ -227,8 +240,12 @@ interface IMorphoBase {
     /// @param assets The amount of collateral to supply.
     /// @param onBehalf The address that will own the increased collateral position.
     /// @param data Arbitrary data to pass to the `onMorphoSupplyCollateral` callback. Pass empty data if not needed.
-    function supplyCollateral(MarketParams memory marketParams, uint256 assets, address onBehalf, bytes memory data)
-        external;
+    function supplyCollateral(
+        MarketParams memory marketParams,
+        uint256 assets,
+        address onBehalf,
+        bytes memory data
+    ) external;
 
     /// @notice Withdraws `assets` of collateral on behalf of `onBehalf` and sends the assets to `receiver`.
     /// @dev `msg.sender` must be authorized to manage `onBehalf`'s positions.
@@ -237,8 +254,12 @@ interface IMorphoBase {
     /// @param assets The amount of collateral to withdraw.
     /// @param onBehalf The address of the owner of the collateral position.
     /// @param receiver The address that will receive the collateral assets.
-    function withdrawCollateral(MarketParams memory marketParams, uint256 assets, address onBehalf, address receiver)
-        external;
+    function withdrawCollateral(
+        MarketParams memory marketParams,
+        uint256 assets,
+        address onBehalf,
+        address receiver
+    ) external;
 
     /// @notice Liquidates the given `repaidShares` of debt asset or seize the given `seizedAssets` of collateral on the
     /// given market `marketParams` of the given `borrower`'s position, optionally calling back the caller's
@@ -272,12 +293,19 @@ interface IMorphoBase {
     /// @param token The token to flash loan.
     /// @param assets The amount of assets to flash loan.
     /// @param data Arbitrary data to pass to the `onMorphoFlashLoan` callback.
-    function flashLoan(address token, uint256 assets, bytes calldata data) external;
+    function flashLoan(
+        address token,
+        uint256 assets,
+        bytes calldata data
+    ) external;
 
     /// @notice Sets the authorization for `authorized` to manage `msg.sender`'s positions.
     /// @param authorized The authorized address.
     /// @param newIsAuthorized The new authorization status.
-    function setAuthorization(address authorized, bool newIsAuthorized) external;
+    function setAuthorization(
+        address authorized,
+        bool newIsAuthorized
+    ) external;
 
     /// @notice Sets the authorization for `authorization.authorized` to manage `authorization.authorizer`'s positions.
     /// @dev Warning: Reverts if the signature has already been submitted.
@@ -285,13 +313,18 @@ interface IMorphoBase {
     /// @dev The nonce is passed as argument to be able to revert with a different error message.
     /// @param authorization The `Authorization` struct.
     /// @param signature The signature.
-    function setAuthorizationWithSig(Authorization calldata authorization, Signature calldata signature) external;
+    function setAuthorizationWithSig(
+        Authorization calldata authorization,
+        Signature calldata signature
+    ) external;
 
     /// @notice Accrues interest for the given market `marketParams`.
     function accrueInterest(MarketParams memory marketParams) external;
 
     /// @notice Returns the data stored on the different `slots`.
-    function extSloads(bytes32[] memory slots) external view returns (bytes32[] memory);
+    function extSloads(
+        bytes32[] memory slots
+    ) external view returns (bytes32[] memory);
 }
 
 /// @dev This interface is inherited by Morpho so that function signatures are checked by the compiler.
@@ -300,17 +333,26 @@ interface IMorphoStaticTyping is IMorphoBase {
     /// @notice The state of the position of `user` on the market corresponding to `id`.
     /// @dev Warning: For `feeRecipient`, `supplyShares` does not contain the accrued shares since the last interest
     /// accrual.
-    function position(Id id, address user)
+    function position(
+        Id id,
+        address user
+    )
         external
         view
-        returns (uint256 supplyShares, uint128 borrowShares, uint128 collateral);
+        returns (
+            uint256 supplyShares,
+            uint128 borrowShares,
+            uint128 collateral
+        );
 
     /// @notice The state of the market corresponding to `id`.
     /// @dev Warning: `totalSupplyAssets` does not contain the accrued interest since the last interest accrual.
     /// @dev Warning: `totalBorrowAssets` does not contain the accrued interest since the last interest accrual.
     /// @dev Warning: `totalSupplyShares` does not contain the accrued shares by `feeRecipient` since the last interest
     /// accrual.
-    function market(Id id)
+    function market(
+        Id id
+    )
         external
         view
         returns (
@@ -325,10 +367,24 @@ interface IMorphoStaticTyping is IMorphoBase {
     /// @notice The market params corresponding to `id`.
     /// @dev This mapping is not used in Morpho. It is there to enable reducing the cost associated to calldata on layer
     /// 2s by creating a wrapper contract with functions that take `id` as input instead of `marketParams`.
-    function idToMarketParams(Id id)
+    function idToMarketParams(
+        Id id
+    )
         external
         view
-        returns (address loanToken, address collateralToken, address oracle, address irm, uint256 lltv);
+        returns (
+            address loanToken,
+            address collateralToken,
+            address oracle,
+            address irm,
+            uint256 lltv
+        );
+
+    /// @notice Whether `borrower` is whitelisted for uncollateralized borrowing on market `id`.
+    function isUncollateralizedBorrower(
+        Id id,
+        address borrower
+    ) external view returns (bool);
 }
 
 /// @title IMorpho
@@ -339,7 +395,10 @@ interface IMorpho is IMorphoBase {
     /// @notice The state of the position of `user` on the market corresponding to `id`.
     /// @dev Warning: For `feeRecipient`, `p.supplyShares` does not contain the accrued shares since the last interest
     /// accrual.
-    function position(Id id, address user) external view returns (Position memory p);
+    function position(
+        Id id,
+        address user
+    ) external view returns (Position memory p);
 
     /// @notice The state of the market corresponding to `id`.
     /// @dev Warning: `m.totalSupplyAssets` does not contain the accrued interest since the last interest accrual.
@@ -351,5 +410,7 @@ interface IMorpho is IMorphoBase {
     /// @notice The market params corresponding to `id`.
     /// @dev This mapping is not used in Morpho. It is there to enable reducing the cost associated to calldata on layer
     /// 2s by creating a wrapper contract with functions that take `id` as input instead of `marketParams`.
-    function idToMarketParams(Id id) external view returns (MarketParams memory);
+    function idToMarketParams(
+        Id id
+    ) external view returns (MarketParams memory);
 }

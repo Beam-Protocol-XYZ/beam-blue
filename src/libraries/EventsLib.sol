@@ -147,4 +147,11 @@ library EventsLib {
     /// @param interest The amount of interest accrued.
     /// @param feeShares The amount of shares minted as fee.
     event AccrueInterest(Id indexed id, uint256 prevBorrowRate, uint256 interest, uint256 feeShares);
+
+    /// @notice Emitted when setting an uncollateralized borrower whitelist status.
+    /// @param id The market id.
+    /// @param borrower The borrower address.
+    /// @param isWhitelisted The new whitelist status.
+    event SetUncollateralizedBorrower(Id indexed id, address indexed borrower, bool isWhitelisted);
+    );
 }
