@@ -85,7 +85,7 @@ contract OnlyOwnerIntegrationTest is BaseTest {
     }
 
     function testEnableTooHighLltv(uint256 lltv) public {
-        lltv = bound(lltv, WAD, type(uint256).max);
+        lltv = bound(lltv, Constants.WAD, type(uint256).max);
 
         vm.prank(OWNER);
         vm.expectRevert(bytes(ErrorsLib.MAX_LLTV_EXCEEDED));

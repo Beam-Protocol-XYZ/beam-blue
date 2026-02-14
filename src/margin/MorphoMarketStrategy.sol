@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BUSL-1.1
 pragma solidity 0.8.19;
 
-import {Id, MarketParams, Market, IMorpho} from "../interfaces/IMorpho.sol";
+import {Id, MarketParams, Market, Position, IMorpho} from "../interfaces/IMorpho.sol";
 import {IStrategy} from "../interfaces/IStrategy.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
 import {SafeTransferLib} from "../libraries/SafeTransferLib.sol";
@@ -32,7 +32,7 @@ contract MorphoMarketStrategy is IStrategy {
         loanToken = params.loanToken;
 
         // Approve Morpho to spend loan token
-        IERC20(loanToken).approve(_morpho, type(uint256).max);
+        IERC20(loanToken).safeApprove(_morpho, type(uint256).max);
     }
 
     /* ═══════════════════════════════════════════ DEPOSIT/WITHDRAW ═══════════════════════════════════════════ */
@@ -134,7 +134,8 @@ contract MorphoMarketStrategy is IStrategy {
     }
 
     function maxWithdraw(address owner) external view returns (uint256) {
-        (, , uint128 supplyShares) = morpho.position(marketId, owner);
+        Position memory pos = morpho.position(marketId, owner);
+        uint256 supplyShares = pos.supplyShares;
         Market memory market = morpho.market(marketId);
         uint256 suppliedAssets = uint256(supplyShares).toAssetsDown(
             market.totalSupplyAssets,
@@ -145,7 +146,6 @@ contract MorphoMarketStrategy is IStrategy {
         uint256 liquidity = market.totalSupplyAssets > market.totalBorrowAssets
             ? market.totalSupplyAssets - market.totalBorrowAssets
             : 0;
-
         return suppliedAssets < liquidity ? suppliedAssets : liquidity;
     }
 }

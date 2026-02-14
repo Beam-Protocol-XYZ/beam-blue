@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.0;
 
-import "../BaseTest.sol";
+import {BaseTest} from "../BaseTest.sol";
+import {Id, MarketParams, IMorpho} from "../../../src/interfaces/IMorpho.sol";
+import {MathLib} from "../../../src/libraries/MathLib.sol";
+import {SharesMathLib} from "../../../src/libraries/SharesMathLib.sol";
+import {MarketParamsLib} from "../../../src/libraries/MarketParamsLib.sol";
+import {MorphoLib} from "../../../src/libraries/periphery/MorphoLib.sol";
+import {ErrorsLib} from "../../../src/libraries/ErrorsLib.sol";
 
 contract UncollateralizedBorrowingTest is BaseTest {
     using MathLib for uint256;

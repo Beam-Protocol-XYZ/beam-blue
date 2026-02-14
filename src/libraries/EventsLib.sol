@@ -153,5 +153,4 @@ library EventsLib {
     /// @param borrower The borrower address.
     /// @param isWhitelisted The new whitelist status.
     event SetUncollateralizedBorrower(Id indexed id, address indexed borrower, bool isWhitelisted);
-    );
 }

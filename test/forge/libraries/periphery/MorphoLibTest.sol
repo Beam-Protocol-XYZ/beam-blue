@@ -31,13 +31,13 @@ contract MorphoLibTest is BaseTest {
 
         uint256 collateralPrice = IOracle(marketParams.oracle).price();
         collateralToken.setBalance(
-            BORROWER, amountBorrowed.wDivUp(marketParams.lltv).mulDivUp(ORACLE_PRICE_SCALE, collateralPrice)
+            BORROWER, amountBorrowed.wDivUp(marketParams.lltv).mulDivUp(Constants.ORACLE_PRICE_SCALE, collateralPrice)
         );
 
         vm.startPrank(BORROWER);
         morpho.supplyCollateral(
             marketParams,
-            amountBorrowed.wDivUp(marketParams.lltv).mulDivUp(ORACLE_PRICE_SCALE, collateralPrice),
+            amountBorrowed.wDivUp(marketParams.lltv).mulDivUp(Constants.ORACLE_PRICE_SCALE, collateralPrice),
             BORROWER,
             hex""
         );

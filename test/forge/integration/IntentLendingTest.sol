@@ -1,19 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.0;
 
-import "../../lib/forge-std/src/Test.sol";
-import "../forge/BaseTest.sol";
-import {IntentLending} from "../../src/intent/IntentLending.sol";
-import {IIntentLending} from "../../src/interfaces/IIntentLending.sol";
-
-/// @notice Mock oracle for testing
-contract MockIntentOracle {
-    uint256 public price = 1e36; // 1:1 price
-
-    function setPrice(uint256 _price) external {
-        price = _price;
-    }
-}
+import {Test} from "../../../lib/forge-std/src/Test.sol";
+import {BaseTest} from "../BaseTest.sol";
+import {IntentLending} from "../../../src/intent/IntentLending.sol";
+import {IIntentLending} from "../../../src/interfaces/IIntentLending.sol";
+import {ERC20Mock} from "../../../src/mocks/ERC20Mock.sol";
+import {MockIntentOracle} from "../mocks/MockIntentOracle.sol";
+import {Constants} from "../helpers/Constants.sol";
 
 contract IntentLendingTest is BaseTest {
     IntentLending public intentLending;
@@ -23,7 +17,6 @@ contract IntentLendingTest is BaseTest {
     ERC20Mock public weth;
 
     address public LENDER;
-    address public BORROWER;
     address public SOLVER;
 
     function setUp() public override {
@@ -45,6 +38,7 @@ contract IntentLendingTest is BaseTest {
 
         // Setup oracle
         mockOracle = new MockIntentOracle();
+        mockOracle.setPrice(2000 * Constants.ORACLE_PRICE_SCALE); // $2000 per WETH
         vm.prank(OWNER);
         intentLending.setOracle(
             address(weth),
@@ -73,7 +67,7 @@ contract IntentLendingTest is BaseTest {
             address(usdc),
             100_000e18, // amount
             10_000e18, // minAmount
-            0.05e18 / 365 days, // ~5% APY per second
+            uint256(0.05e18) / 365 days, // ~5% APY per second
             30 days, // maxDuration
             collaterals,
             0.75e18, // 75% LTV
@@ -97,7 +91,7 @@ contract IntentLendingTest is BaseTest {
         bytes32 intentId = intentLending.createBorrowIntent(
             address(usdc),
             10_000e18, // amount
-            0.10e18 / 365 days, // ~10% APY max
+            uint256(0.10e18) / 365 days, // ~10% APY max
             14 days, // duration
             address(weth),
             10e18, // collateral
@@ -126,7 +120,7 @@ contract IntentLendingTest is BaseTest {
             address(usdc),
             100_000e18,
             10_000e18,
-            0.05e18 / 365 days,
+            uint256(0.05e18) / 365 days,
             30 days,
             collaterals,
             0.75e18,
@@ -139,7 +133,7 @@ contract IntentLendingTest is BaseTest {
         bytes32 borrowIntentId = intentLending.createBorrowIntent(
             address(usdc),
             10_000e18,
-            0.10e18 / 365 days,
+            uint256(0.10e18) / 365 days,
             14 days,
             address(weth),
             20e18, // Enough collateral for 75% LTV
@@ -152,7 +146,7 @@ contract IntentLendingTest is BaseTest {
         bytes32 loanId = intentLending.matchIntents(
             lendIntentId,
             borrowIntentId,
-            0.07e18 / 365 days, // Agreed rate in between
+            uint256(0.07e18) / 365 days, // Agreed rate in between
             10_000e18
         );
 
@@ -180,7 +174,7 @@ contract IntentLendingTest is BaseTest {
             address(usdc),
             100_000e18,
             10_000e18,
-            0.15e18 / 365 days, // 15% min rate
+            uint256(0.15e18) / 365 days, // 15% min rate
             30 days,
             collaterals,
             0.75e18,
@@ -192,7 +186,7 @@ contract IntentLendingTest is BaseTest {
         bytes32 borrowIntentId = intentLending.createBorrowIntent(
             address(usdc),
             10_000e18,
-            0.05e18 / 365 days, // 5% max rate - lower than lender minimum!
+            uint256(0.05e18) / 365 days, // 5% max rate - lower than lender minimum!
             14 days,
             address(weth),
             20e18,
@@ -218,7 +212,7 @@ contract IntentLendingTest is BaseTest {
             address(usdc),
             100_000e18,
             10_000e18,
-            0.05e18 / 365 days,
+            uint256(0.05e18) / 365 days,
             30 days,
             collaterals,
             0.75e18,
@@ -230,7 +224,7 @@ contract IntentLendingTest is BaseTest {
         bytes32 borrowIntentId = intentLending.createBorrowIntent(
             address(usdc),
             10_000e18,
-            0.10e18 / 365 days,
+            uint256(0.10e18) / 365 days,
             14 days,
             address(weth),
             20e18,
@@ -242,7 +236,7 @@ contract IntentLendingTest is BaseTest {
         bytes32 loanId = intentLending.matchIntents(
             lendIntentId,
             borrowIntentId,
-            0.07e18 / 365 days,
+            uint256(0.07e18) / 365 days,
             10_000e18
         );
 
@@ -274,7 +268,7 @@ contract IntentLendingTest is BaseTest {
             address(usdc),
             100_000e18,
             10_000e18,
-            0.05e18 / 365 days,
+            uint256(0.05e18) / 365 days,
             30 days,
             collaterals,
             0.90e18, // 90% LTV - tight
@@ -286,7 +280,7 @@ contract IntentLendingTest is BaseTest {
         bytes32 borrowIntentId = intentLending.createBorrowIntent(
             address(usdc),
             10_000e18,
-            0.10e18 / 365 days,
+            uint256(0.10e18) / 365 days,
             14 days,
             address(weth),
             12e18, // Just enough for 90% LTV
@@ -298,7 +292,7 @@ contract IntentLendingTest is BaseTest {
         bytes32 loanId = intentLending.matchIntents(
             lendIntentId,
             borrowIntentId,
-            0.07e18 / 365 days,
+            uint256(0.07e18) / 365 days,
             10_000e18
         );
 
@@ -337,7 +331,7 @@ contract IntentLendingTest is BaseTest {
             address(usdc),
             100_000e18,
             10_000e18,
-            0.05e18 / 365 days,
+            uint256(0.05e18) / 365 days,
             30 days,
             collaterals,
             0.75e18,
@@ -372,7 +366,7 @@ contract IntentLendingTest is BaseTest {
         bytes32 intentId = intentLending.createBorrowIntent(
             address(usdc),
             10_000e18,
-            0.10e18 / 365 days,
+            uint256(0.10e18) / 365 days,
             14 days,
             address(weth),
             10e18,
@@ -409,7 +403,7 @@ contract IntentLendingTest is BaseTest {
             address(usdc),
             100_000e18,
             10_000e18,
-            0.05e18 / 365 days,
+            uint256(5e16) / 365 days,
             30 days,
             collaterals,
             0.75e18,
@@ -421,7 +415,7 @@ contract IntentLendingTest is BaseTest {
         bytes32 borrowIntentId = intentLending.createBorrowIntent(
             address(usdc),
             10_000e18,
-            0.10e18 / 365 days,
+            uint256(1e17) / 365 days,
             14 days,
             address(weth),
             20e18,
@@ -437,7 +431,7 @@ contract IntentLendingTest is BaseTest {
         intentLending.matchIntents(
             lendIntentId,
             borrowIntentId,
-            0.07e18 / 365 days,
+            uint256(7e16) / 365 days,
             10_000e18
         );
     }

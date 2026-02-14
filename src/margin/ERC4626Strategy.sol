@@ -5,58 +5,45 @@ import {IStrategy} from "../interfaces/IStrategy.sol";
 import {IERC20} from "../interfaces/IERC20.sol";
 import {SafeTransferLib} from "../libraries/SafeTransferLib.sol";
 
+/* ═══════════════════════════════════════════ INTERFACES ═══════════════════════════════════════════ */
+
+/// @notice Minimal ERC-4626 interface
+interface IERC4626 {
+    function deposit(uint256 assets, address receiver) external returns (uint256 shares);
+
+    function withdraw(
+        uint256 assets,
+        address receiver,
+        address owner
+    ) external returns (uint256 shares);
+
+    function redeem(
+        uint256 shares,
+        address receiver,
+        address owner
+    ) external returns (uint256 assets);
+
+    function previewDeposit(uint256 assets) external view returns (uint256 shares);
+
+    function previewWithdraw(uint256 assets) external view returns (uint256 shares);
+
+    function previewRedeem(uint256 shares) external view returns (uint256 assets);
+
+    function convertToAssets(uint256 shares) external view returns (uint256 assets);
+
+    function convertToShares(uint256 assets) external view returns (uint256 shares);
+
+    function asset() external view returns (address);
+    function totalAssets() external view returns (uint256);
+    function maxDeposit(address receiver) external view returns (uint256);
+    function maxWithdraw(address owner) external view returns (uint256);
+}
+
 /// @title ERC4626Strategy
 /// @notice Adapter that wraps any ERC-4626 vault as an IStrategy
 /// @dev Thin wrapper for compatibility with standard ERC-4626 vaults
 contract ERC4626Strategy is IStrategy {
     using SafeTransferLib for IERC20;
-
-    /* ═══════════════════════════════════════════ INTERFACES ═══════════════════════════════════════════ */
-
-    /// @notice Minimal ERC-4626 interface
-    interface IERC4626 {
-        function deposit(
-            uint256 assets,
-            address receiver
-        ) external returns (uint256 shares);
-
-        function withdraw(
-            uint256 assets,
-            address receiver,
-            address owner
-        ) external returns (uint256 shares);
-
-        function redeem(
-            uint256 shares,
-            address receiver,
-            address owner
-        ) external returns (uint256 assets);
-
-        function previewDeposit(
-            uint256 assets
-        ) external view returns (uint256 shares);
-
-        function previewWithdraw(
-            uint256 assets
-        ) external view returns (uint256 shares);
-
-        function previewRedeem(
-            uint256 shares
-        ) external view returns (uint256 assets);
-
-        function convertToAssets(
-            uint256 shares
-        ) external view returns (uint256 assets);
-
-        function convertToShares(
-            uint256 assets
-        ) external view returns (uint256 shares);
-
-        function asset() external view returns (address);
-        function totalAssets() external view returns (uint256);
-        function maxDeposit(address receiver) external view returns (uint256);
-        function maxWithdraw(address owner) external view returns (uint256);
-    }
 
     /* ═══════════════════════════════════════════ IMMUTABLES ═══════════════════════════════════════════ */
 
@@ -70,7 +57,7 @@ contract ERC4626Strategy is IStrategy {
         underlyingAsset = vault.asset();
 
         // Approve vault to spend underlying
-        IERC20(underlyingAsset).approve(_vault, type(uint256).max);
+        IERC20(underlyingAsset).safeApprove(_vault, type(uint256).max);
     }
 
     /* ═══════════════════════════════════════════ DEPOSIT/WITHDRAW ═══════════════════════════════════════════ */

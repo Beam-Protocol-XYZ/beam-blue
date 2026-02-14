@@ -61,6 +61,14 @@ contract MarginEngine is IMarginEngine {
     /// @notice Pair key: keccak256(collateralToken, loanToken)
     mapping(bytes32 pairKey => MarginPairConfig) public pairConfigs;
 
+    /// @notice Per-token collateral configurations (set via setCollateralConfig)
+    mapping(address token => CollateralConfig) public collateralConfigs;
+    address[] public collateralTokens;
+
+    /// @notice Per-token loan market configurations (set via setLoanMarketConfig)
+    mapping(address token => LoanMarketConfig) public loanMarketConfigs;
+    address[] public loanTokens;
+
     // Whitelisted strategies
     mapping(address strategy => bool) public whitelistedStrategies;
 
@@ -132,7 +140,7 @@ contract MarginEngine is IMarginEngine {
         MarginPairConfig storage config = pairConfigs[pairKey];
 
         if (!config.enabled) {
-            IERC20(loanToken).approve(address(morpho), type(uint256).max);
+            IERC20(loanToken).safeApprove(address(morpho), type(uint256).max);
         }
 
         config.oracle = oracle;
@@ -155,7 +163,9 @@ contract MarginEngine is IMarginEngine {
 
         if (whitelisted && !whitelistedStrategies[strategy]) {
             address asset = IStrategy(strategy).asset();
-            IERC20(asset).approve(strategy, type(uint256).max);
+            IERC20(asset).safeApprove(strategy, type(uint256).max);
+            // Authorize strategy in Morpho to withdraw on MarginEngine's behalf
+            morpho.setAuthorization(strategy, true);
         }
 
         whitelistedStrategies[strategy] = whitelisted;
@@ -164,6 +174,74 @@ contract MarginEngine is IMarginEngine {
 
     function setPaused(bool _paused) external onlyOwner {
         paused = _paused;
+    }
+
+    /// @inheritdoc IMarginEngine
+    function setCollateralConfig(
+        address token,
+        address oracle,
+        uint256 maxLeverage,
+        uint256 liquidationThreshold,
+        uint256 liquidationIncentive,
+        uint8 decimals
+    ) external onlyOwner {
+        if (token == address(0) || oracle == address(0)) revert ZeroAddress();
+        require(liquidationThreshold > 0 && liquidationThreshold < WAD, "invalid liq threshold");
+        require(maxLeverage > 0, "Max leverage must be > 0");
+
+        CollateralConfig storage config = collateralConfigs[token];
+        if (!config.enabled) {
+            collateralTokens.push(token);
+        }
+
+        config.oracle = oracle;
+        config.maxLeverage = maxLeverage;
+        config.liquidationThreshold = liquidationThreshold;
+        config.liquidationIncentive = liquidationIncentive;
+        config.decimals = decimals;
+        config.enabled = true;
+
+        emit CollateralConfigSet(token, maxLeverage, liquidationThreshold);
+
+        // Auto-assemble pair configs for all known loan tokens
+        for (uint256 i = 0; i < loanTokens.length; i++) {
+            address loan = loanTokens[i];
+            if (loanMarketConfigs[loan].enabled) {
+                _assemblePairConfig(token, loan);
+            }
+        }
+    }
+
+    /// @inheritdoc IMarginEngine
+    function setLoanMarketConfig(
+        address loanToken,
+        Id morphoMarketId,
+        address oracle,
+        uint8 decimals
+    ) external onlyOwner {
+        if (loanToken == address(0) || oracle == address(0)) revert ZeroAddress();
+
+        LoanMarketConfig storage config = loanMarketConfigs[loanToken];
+        if (!config.enabled) {
+            loanTokens.push(loanToken);
+            // Pre-approve Morpho for this loan token
+            IERC20(loanToken).safeApprove(address(morpho), type(uint256).max);
+        }
+
+        config.morphoMarketId = morphoMarketId;
+        config.oracle = oracle;
+        config.decimals = decimals;
+        config.enabled = true;
+
+        emit LoanMarketConfigSet(loanToken, morphoMarketId);
+
+        // Auto-assemble pair configs for all known collateral tokens
+        for (uint256 i = 0; i < collateralTokens.length; i++) {
+            address coll = collateralTokens[i];
+            if (collateralConfigs[coll].enabled) {
+                _assemblePairConfig(coll, loanToken);
+            }
+        }
     }
 
     function withdrawProtocolReserves(
@@ -890,4 +968,33 @@ contract MarginEngine is IMarginEngine {
                 WAD.wDivDown(WAD - LIQUIDATION_CURSOR.wMulDown(WAD - lltv))
             );
     }
+
+    /// @notice Assemble a MarginPairConfig from per-token collateral and loan configs
+    /// @dev Called automatically when both sides of a pair are configured
+    function _assemblePairConfig(
+        address collateralToken,
+        address loanToken
+    ) internal {
+        CollateralConfig storage collConfig = collateralConfigs[collateralToken];
+        LoanMarketConfig storage loanConfig = loanMarketConfigs[loanToken];
+
+        bytes32 pairKey = _getPairKey(collateralToken, loanToken);
+        MarginPairConfig storage pair = pairConfigs[pairKey];
+
+        // First time enabling this pair: approve Morpho for the loan token
+        if (!pair.enabled) {
+            IERC20(loanToken).safeApprove(address(morpho), type(uint256).max);
+        }
+
+        // Use the collateral oracle (returns collateral price in loan token terms)
+        pair.oracle = collConfig.oracle;
+        pair.morphoMarketId = loanConfig.morphoMarketId;
+        // Derive LLTV from liquidation threshold (they map to the same concept)
+        pair.lltv = collConfig.liquidationThreshold;
+        pair.maxLeverage = collConfig.maxLeverage;
+        // Calculate liquidation incentive factor from lltv
+        pair.liquidationIncentiveFactor = _liquidationIncentiveFactor(pair.lltv);
+        pair.enabled = true;
+    }
 }
+

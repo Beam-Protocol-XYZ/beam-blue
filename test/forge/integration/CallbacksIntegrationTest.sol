@@ -131,7 +131,7 @@ contract CallbacksIntegrationTest is
         uint256 collateralAmount;
         (collateralAmount, loanAmount,) = _boundHealthyPosition(0, loanAmount, oracle.price());
 
-        oracle.setPrice(ORACLE_PRICE_SCALE);
+        oracle.setPrice(Constants.ORACLE_PRICE_SCALE);
 
         loanToken.setBalance(address(this), loanAmount);
         collateralToken.setBalance(address(this), collateralAmount);
@@ -152,7 +152,7 @@ contract CallbacksIntegrationTest is
         uint256 collateralAmount;
         (collateralAmount, loanAmount,) = _boundHealthyPosition(0, loanAmount, oracle.price());
 
-        oracle.setPrice(ORACLE_PRICE_SCALE);
+        oracle.setPrice(Constants.ORACLE_PRICE_SCALE);
 
         loanToken.setBalance(address(this), loanAmount);
         collateralToken.setBalance(address(this), collateralAmount);
@@ -178,7 +178,7 @@ contract CallbacksIntegrationTest is
         uint256 collateralAmount;
         (collateralAmount, loanAmount,) = _boundHealthyPosition(0, loanAmount, oracle.price());
 
-        oracle.setPrice(ORACLE_PRICE_SCALE);
+        oracle.setPrice(Constants.ORACLE_PRICE_SCALE);
 
         loanToken.setBalance(address(this), loanAmount);
         morpho.supply(marketParams, loanAmount, 0, address(this), hex"");

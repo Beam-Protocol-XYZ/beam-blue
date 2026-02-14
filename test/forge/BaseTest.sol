@@ -1,21 +1,30 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.0;
 
-import "../../lib/forge-std/src/Test.sol";
-import "../../lib/forge-std/src/console.sol";
+import {Test} from "../../lib/forge-std/src/Test.sol";
+import {console} from "../../lib/forge-std/src/console.sol";
 
-import {IMorpho} from "../../src/interfaces/IMorpho.sol";
+import {Id, MarketParams, IMorpho, Authorization, Signature} from "../../src/interfaces/IMorpho.sol";
 import "../../src/interfaces/IMorphoCallbacks.sol";
+import {IOracle} from "../../src/interfaces/IOracle.sol";
 import {IrmMock} from "../../src/mocks/IrmMock.sol";
 import {ERC20Mock} from "../../src/mocks/ERC20Mock.sol";
 import {OracleMock} from "../../src/mocks/OracleMock.sol";
 
-import "../../src/Morpho.sol";
+import {Morpho} from "../../src/Morpho.sol";
+import {MathLib, WAD} from "../../src/libraries/MathLib.sol";
+import {SharesMathLib} from "../../src/libraries/SharesMathLib.sol";
+import {MarketParamsLib} from "../../src/libraries/MarketParamsLib.sol";
+import {MorphoLib} from "../../src/libraries/periphery/MorphoLib.sol";
+import {MorphoBalancesLib} from "../../src/libraries/periphery/MorphoBalancesLib.sol";
+import {EventsLib} from "../../src/libraries/EventsLib.sol";
+import {ErrorsLib} from "../../src/libraries/ErrorsLib.sol";
+import {MAX_FEE} from "../../src/libraries/ConstantsLib.sol";
+
 import {Math} from "./helpers/Math.sol";
 import {SigUtils} from "./helpers/SigUtils.sol";
 import {ArrayLib} from "./helpers/ArrayLib.sol";
-import {MorphoLib} from "../../src/libraries/periphery/MorphoLib.sol";
-import {MorphoBalancesLib} from "../../src/libraries/periphery/MorphoBalancesLib.sol";
+import {Constants} from "./helpers/Constants.sol";
 
 contract BaseTest is Test {
     using Math for uint256;
@@ -26,18 +35,20 @@ contract BaseTest is Test {
     using MorphoBalancesLib for IMorpho;
     using MarketParamsLib for MarketParams;
 
-    uint256 internal constant BLOCK_TIME = 1;
-    uint256 internal constant HIGH_COLLATERAL_AMOUNT = 1e35;
-    uint256 internal constant MIN_TEST_AMOUNT = 100;
-    uint256 internal constant MAX_TEST_AMOUNT = 1e32;
-    uint256 internal constant MIN_TEST_SHARES = MIN_TEST_AMOUNT * SharesMathLib.VIRTUAL_SHARES;
-    uint256 internal constant MAX_TEST_SHARES = MAX_TEST_AMOUNT * SharesMathLib.VIRTUAL_SHARES;
-    uint256 internal constant MIN_TEST_LLTV = 0.01 ether;
-    uint256 internal constant MAX_TEST_LLTV = 0.99 ether;
-    uint256 internal constant DEFAULT_TEST_LLTV = 0.8 ether;
-    uint256 internal constant MIN_COLLATERAL_PRICE = 1e10;
-    uint256 internal constant MAX_COLLATERAL_PRICE = 1e40;
-    uint256 internal constant MAX_COLLATERAL_ASSETS = type(uint128).max;
+    uint256 internal constant BLOCK_TIME = Constants.BLOCK_TIME;
+    uint256 internal constant HIGH_COLLATERAL_AMOUNT = Constants.HIGH_COLLATERAL_AMOUNT;
+    uint256 internal constant MIN_TEST_AMOUNT = Constants.MIN_TEST_AMOUNT;
+    uint256 internal constant MAX_TEST_AMOUNT = Constants.MAX_TEST_AMOUNT;
+    uint256 internal constant MIN_TEST_SHARES = Constants.MIN_TEST_AMOUNT * SharesMathLib.VIRTUAL_SHARES;
+    uint256 internal constant MAX_TEST_SHARES = Constants.MAX_TEST_AMOUNT * SharesMathLib.VIRTUAL_SHARES;
+    uint256 internal constant MIN_TEST_LLTV = Constants.MIN_TEST_LLTV;
+    uint256 internal constant MAX_TEST_LLTV = Constants.MAX_TEST_LLTV;
+    uint256 internal constant DEFAULT_TEST_LLTV = Constants.DEFAULT_TEST_LLTV;
+    uint256 internal constant MIN_COLLATERAL_PRICE = Constants.MIN_COLLATERAL_PRICE;
+    uint256 internal constant MAX_COLLATERAL_PRICE = Constants.MAX_COLLATERAL_PRICE;
+    uint256 internal constant MAX_COLLATERAL_ASSETS = Constants.MAX_COLLATERAL_ASSETS;
+    uint256 internal constant MAX_LIQUIDATION_INCENTIVE_FACTOR = Constants.MAX_LIQUIDATION_INCENTIVE_FACTOR;
+    uint256 internal constant LIQUIDATION_CURSOR = Constants.LIQUIDATION_CURSOR;
 
     address internal SUPPLIER;
     address internal BORROWER;
@@ -77,7 +88,7 @@ contract BaseTest is Test {
 
         oracle = new OracleMock();
 
-        oracle.setPrice(ORACLE_PRICE_SCALE);
+        oracle.setPrice(Constants.ORACLE_PRICE_SCALE);
 
         irm = new IrmMock();
 
@@ -166,14 +177,14 @@ contract BaseTest is Test {
         priceCollateral = bound(priceCollateral, MIN_COLLATERAL_PRICE, MAX_COLLATERAL_PRICE);
         amountBorrowed = bound(amountBorrowed, MIN_TEST_AMOUNT, MAX_TEST_AMOUNT);
 
-        uint256 minCollateral = amountBorrowed.wDivUp(marketParams.lltv).mulDivUp(ORACLE_PRICE_SCALE, priceCollateral);
+        uint256 minCollateral = amountBorrowed.wDivUp(marketParams.lltv).mulDivUp(Constants.ORACLE_PRICE_SCALE, priceCollateral);
 
         if (minCollateral <= MAX_COLLATERAL_ASSETS) {
             amountCollateral = bound(amountCollateral, minCollateral, MAX_COLLATERAL_ASSETS);
         } else {
             amountCollateral = MAX_COLLATERAL_ASSETS;
             amountBorrowed = Math.min(
-                amountBorrowed.wMulDown(marketParams.lltv).mulDivDown(priceCollateral, ORACLE_PRICE_SCALE),
+                amountBorrowed.wMulDown(marketParams.lltv).mulDivDown(priceCollateral, Constants.ORACLE_PRICE_SCALE),
                 MAX_TEST_AMOUNT
             );
         }
@@ -192,7 +203,7 @@ contract BaseTest is Test {
         amountBorrowed = bound(amountBorrowed, MIN_TEST_AMOUNT, MAX_TEST_AMOUNT);
 
         uint256 maxCollateral =
-            amountBorrowed.wDivDown(marketParams.lltv).mulDivDown(ORACLE_PRICE_SCALE, priceCollateral);
+            amountBorrowed.wDivDown(marketParams.lltv).mulDivDown(Constants.ORACLE_PRICE_SCALE, priceCollateral);
         amountCollateral = bound(amountCollateral, 0, Math.min(maxCollateral, MAX_COLLATERAL_ASSETS));
 
         vm.assume(amountCollateral > 0 && amountCollateral < maxCollateral);
@@ -229,7 +240,7 @@ contract BaseTest is Test {
         return bound(
             assets,
             0,
-            collateral.zeroFloorSub(borrowed.wDivUp(_marketParams.lltv).mulDivUp(ORACLE_PRICE_SCALE, collateralPrice))
+            collateral.zeroFloorSub(borrowed.wDivUp(_marketParams.lltv).mulDivUp(Constants.ORACLE_PRICE_SCALE, collateralPrice))
         );
     }
 
@@ -340,7 +351,7 @@ contract BaseTest is Test {
         (,, uint256 totalBorrowAssets, uint256 totalBorrowShares) = morpho.expectedMarketBalances(_marketParams);
         uint256 maxRepaidAssets = borrowShares.toAssetsDown(totalBorrowAssets, totalBorrowShares);
         uint256 maxSeizedAssets = maxRepaidAssets.wMulDown(_liquidationIncentiveFactor(_marketParams.lltv))
-            .mulDivDown(ORACLE_PRICE_SCALE, collateralPrice);
+            .mulDivDown(Constants.ORACLE_PRICE_SCALE, collateralPrice);
 
         uint256 collateral = morpho.collateral(_id, borrower);
         return bound(seizedAssets, 0, Math.min(collateral, maxSeizedAssets));
@@ -354,7 +365,7 @@ contract BaseTest is Test {
         Id _id = _marketParams.id();
 
         uint256 collateralPrice = IOracle(_marketParams.oracle).price();
-        uint256 maxRepaidAssets = morpho.collateral(_id, borrower).mulDivDown(collateralPrice, ORACLE_PRICE_SCALE)
+        uint256 maxRepaidAssets = morpho.collateral(_id, borrower).mulDivDown(collateralPrice, Constants.ORACLE_PRICE_SCALE)
             .wDivDown(_liquidationIncentiveFactor(_marketParams.lltv));
 
         (,, uint256 totalBorrowAssets, uint256 totalBorrowShares) = morpho.expectedMarketBalances(_marketParams);
@@ -369,7 +380,7 @@ contract BaseTest is Test {
 
         uint256 collateralPrice = IOracle(_marketParams.oracle).price();
 
-        return morpho.collateral(_id, user).mulDivDown(collateralPrice, ORACLE_PRICE_SCALE).wMulDown(_marketParams.lltv);
+        return morpho.collateral(_id, user).mulDivDown(collateralPrice, Constants.ORACLE_PRICE_SCALE).wMulDown(_marketParams.lltv);
     }
 
     function _isHealthy(MarketParams memory _marketParams, address user) internal view returns (bool) {

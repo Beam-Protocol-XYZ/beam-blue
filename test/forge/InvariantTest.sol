@@ -22,7 +22,7 @@ contract InvariantTest is BaseTest {
     }
 
     modifier logCall(string memory name) {
-        console2.log(msg.sender, "->", name);
+        console.log(msg.sender, "->", name);
 
         _;
     }

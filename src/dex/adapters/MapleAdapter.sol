@@ -2,6 +2,7 @@
 pragma solidity 0.8.19;
 
 import {BaseRedemptionAdapter} from "./BaseRedemptionAdapter.sol";
+import {IRedemptionAdapter} from "../interfaces/IRedemptionAdapter.sol";
 import {IERC20} from "../../interfaces/IERC20.sol";
 import {SafeTransferLib} from "../../libraries/SafeTransferLib.sol";
 
@@ -98,7 +99,7 @@ contract MapleAdapter is BaseRedemptionAdapter {
 
     /* ═══════════════════════════════════════════ REDEMPTION ═══════════════════════════════════════════ */
 
-    /// @inheritdoc BaseRedemptionAdapter
+    /// @inheritdoc IRedemptionAdapter
     function initiateRedemption(
         address rwaToken,
         uint256 amount,
@@ -113,7 +114,7 @@ contract MapleAdapter is BaseRedemptionAdapter {
         IERC20(rwaToken).safeTransferFrom(msg.sender, address(this), amount);
 
         // Approve and request redemption
-        IERC20(rwaToken).approve(pool, amount);
+        IERC20(rwaToken).safeApprove(pool, amount);
         IMaplePool(pool).requestRedeem(amount, address(this));
 
         // Generate request ID
@@ -131,7 +132,7 @@ contract MapleAdapter is BaseRedemptionAdapter {
         });
     }
 
-    /// @inheritdoc BaseRedemptionAdapter
+    /// @inheritdoc IRedemptionAdapter
     function isRedemptionComplete(
         bytes32 requestId
     ) external view override returns (bool) {
@@ -148,7 +149,7 @@ contract MapleAdapter is BaseRedemptionAdapter {
         return IMapleWithdrawalManager(manager).isInExitWindow(address(this));
     }
 
-    /// @inheritdoc BaseRedemptionAdapter
+    /// @inheritdoc IRedemptionAdapter
     function claimRedemption(
         bytes32 requestId
     ) external override onlyFacility returns (uint256 amount) {
@@ -175,7 +176,7 @@ contract MapleAdapter is BaseRedemptionAdapter {
         req.claimed = true;
     }
 
-    /// @inheritdoc BaseRedemptionAdapter
+    /// @inheritdoc IRedemptionAdapter
     function protocolName() external pure override returns (string memory) {
         return "Maple Finance";
     }

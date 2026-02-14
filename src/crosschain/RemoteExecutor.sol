@@ -130,7 +130,7 @@ contract RemoteExecutor {
         if (isWhitelistedMarket[marketId]) revert MarketAlreadyWhitelisted();
 
         MarketParams memory params = morpho.idToMarketParams(marketId);
-        IERC20(params.loanToken).approve(address(morpho), type(uint256).max);
+        IERC20(params.loanToken).safeApprove(address(morpho), type(uint256).max);
 
         isWhitelistedMarket[marketId] = true;
         whitelistedMarkets.push(marketId);

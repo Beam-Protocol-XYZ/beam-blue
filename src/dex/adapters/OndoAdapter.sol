@@ -2,6 +2,7 @@
 pragma solidity 0.8.19;
 
 import {BaseRedemptionAdapter} from "./BaseRedemptionAdapter.sol";
+import {IRedemptionAdapter} from "../interfaces/IRedemptionAdapter.sol";
 import {IERC20} from "../../interfaces/IERC20.sol";
 import {SafeTransferLib} from "../../libraries/SafeTransferLib.sol";
 
@@ -70,7 +71,7 @@ contract OndoAdapter is BaseRedemptionAdapter {
 
     /* ═══════════════════════════════════════════ REDEMPTION ═══════════════════════════════════════════ */
 
-    /// @inheritdoc BaseRedemptionAdapter
+    /// @inheritdoc IRedemptionAdapter
     function initiateRedemption(
         address rwaToken,
         uint256 amount,
@@ -84,7 +85,7 @@ contract OndoAdapter is BaseRedemptionAdapter {
         IERC20(rwaToken).safeTransferFrom(msg.sender, address(this), amount);
 
         // Approve Ondo redemption contract
-        IERC20(rwaToken).approve(address(ondoRedemption), amount);
+        IERC20(rwaToken).safeApprove(address(ondoRedemption), amount);
 
         // Request redemption from Ondo
         requestId = ondoRedemption.requestRedemption(rwaToken, amount);
@@ -93,7 +94,7 @@ contract OndoAdapter is BaseRedemptionAdapter {
         requestAmounts[requestId] = _calculateExpectedOutput(rwaToken, amount);
     }
 
-    /// @inheritdoc BaseRedemptionAdapter
+    /// @inheritdoc IRedemptionAdapter
     function isRedemptionComplete(
         bytes32 requestId
     ) external view override returns (bool) {
@@ -101,7 +102,7 @@ contract OndoAdapter is BaseRedemptionAdapter {
         return ondoRedemption.isRedemptionReady(requestId);
     }
 
-    /// @inheritdoc BaseRedemptionAdapter
+    /// @inheritdoc IRedemptionAdapter
     function claimRedemption(
         bytes32 requestId
     ) external override onlyFacility returns (uint256 amount) {
@@ -116,7 +117,7 @@ contract OndoAdapter is BaseRedemptionAdapter {
         // We then forward it to the redemption facility
     }
 
-    /// @inheritdoc BaseRedemptionAdapter
+    /// @inheritdoc IRedemptionAdapter
     function protocolName() external pure override returns (string memory) {
         return "Ondo Finance";
     }

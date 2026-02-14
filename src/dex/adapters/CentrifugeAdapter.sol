@@ -2,6 +2,7 @@
 pragma solidity 0.8.19;
 
 import {BaseRedemptionAdapter} from "./BaseRedemptionAdapter.sol";
+import {IRedemptionAdapter} from "../interfaces/IRedemptionAdapter.sol";
 import {IERC20} from "../../interfaces/IERC20.sol";
 import {SafeTransferLib} from "../../libraries/SafeTransferLib.sol";
 
@@ -79,7 +80,7 @@ contract CentrifugeAdapter is BaseRedemptionAdapter {
 
     /* ═══════════════════════════════════════════ REDEMPTION ═══════════════════════════════════════════ */
 
-    /// @inheritdoc BaseRedemptionAdapter
+    /// @inheritdoc IRedemptionAdapter
     function initiateRedemption(
         address rwaToken,
         uint256 amount,
@@ -94,7 +95,7 @@ contract CentrifugeAdapter is BaseRedemptionAdapter {
         IERC20(rwaToken).safeTransferFrom(msg.sender, address(this), amount);
 
         // Approve pool
-        IERC20(rwaToken).approve(pool, amount);
+        IERC20(rwaToken).safeApprove(pool, amount);
 
         // Request redemption via ERC-7540 pattern
         ICentrifugePool(pool).requestRedeem(amount, receiver, address(this));
@@ -114,7 +115,7 @@ contract CentrifugeAdapter is BaseRedemptionAdapter {
         pendingRequests[rwaToken][receiver] = requestId;
     }
 
-    /// @inheritdoc BaseRedemptionAdapter
+    /// @inheritdoc IRedemptionAdapter
     function isRedemptionComplete(
         bytes32 requestId
     ) external view override returns (bool) {
@@ -128,7 +129,7 @@ contract CentrifugeAdapter is BaseRedemptionAdapter {
         return ICentrifugePool(pool).maxRedeem(req.owner) >= req.shares;
     }
 
-    /// @inheritdoc BaseRedemptionAdapter
+    /// @inheritdoc IRedemptionAdapter
     function claimRedemption(
         bytes32 requestId
     ) external override onlyFacility returns (uint256 amount) {
@@ -148,7 +149,7 @@ contract CentrifugeAdapter is BaseRedemptionAdapter {
         delete pendingRequests[req.rwaToken][req.owner];
     }
 
-    /// @inheritdoc BaseRedemptionAdapter
+    /// @inheritdoc IRedemptionAdapter
     function protocolName() external pure override returns (string memory) {
         return "Centrifuge";
     }

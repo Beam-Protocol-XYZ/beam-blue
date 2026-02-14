@@ -7,8 +7,8 @@ contract DynamicInvariantTest is BaseInvariantTest {
     using MorphoLib for IMorpho;
     using MarketParamsLib for MarketParams;
 
-    uint256 internal immutable MIN_PRICE = ORACLE_PRICE_SCALE / 10;
-    uint256 internal immutable MAX_PRICE = ORACLE_PRICE_SCALE * 10;
+    uint256 internal immutable MIN_PRICE = Constants.ORACLE_PRICE_SCALE / 10;
+    uint256 internal immutable MAX_PRICE = Constants.ORACLE_PRICE_SCALE * 10;
 
     function setUp() public virtual override {
         selectors.push(this.liquidateSeizedAssetsNoRevert.selector);

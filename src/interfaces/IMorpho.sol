@@ -413,4 +413,10 @@ interface IMorpho is IMorphoBase {
     function idToMarketParams(
         Id id
     ) external view returns (MarketParams memory);
+
+    /// @notice Whether `borrower` is whitelisted for uncollateralized borrowing on market `id`.
+    function isUncollateralizedBorrower(
+        Id id,
+        address borrower
+    ) external view returns (bool);
 }

@@ -75,6 +75,12 @@ library ErrorsLib {
     /// @notice Thrown when a token transferFrom returned false
     string internal constant TRANSFER_FROM_RETURNED_FALSE = "transferFrom returned false";
 
+    /// @notice Thrown when a token approve reverted.
+    string internal constant APPROVE_REVERTED = "approve reverted";
+
+    /// @notice Thrown when a token approve returned false.
+    string internal constant APPROVE_RETURNED_FALSE = "approve returned false";
+
     /// @notice Thrown when the maximum uint128 is exceeded.
     string internal constant MAX_UINT128_EXCEEDED = "max uint128 exceeded";
 }

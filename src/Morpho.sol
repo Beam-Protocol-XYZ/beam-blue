@@ -329,8 +329,8 @@ contract Morpho is IMorphoStaticTyping {
         market[id].totalBorrowAssets += assets.toUint128();
 
         require(
-            _isHealthy(marketParams, id, onBehalf) ||
-                _isUncollateralizedMarketBorrower(marketParams, id, onBehalf),
+            _isUncollateralizedMarketBorrower(marketParams, id, onBehalf) ||
+                _isHealthy(marketParams, id, onBehalf),
             ErrorsLib.INSUFFICIENT_COLLATERAL
         );
         require(
@@ -427,11 +427,11 @@ contract Morpho is IMorphoStaticTyping {
                 .onMorphoSupplyCollateral(assets, data);
 
         if (marketParams.collateralToken != address(0)) {
-        IERC20(marketParams.collateralToken).safeTransferFrom(msg.
-                sender, add
-               ress(this), ass
-               ets);
-            
+            IERC20(marketParams.collateralToken).safeTransferFrom(
+                msg.sender,
+                address(this),
+                assets
+            );
         }
     }
 

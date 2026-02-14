@@ -155,7 +155,7 @@ contract RedemptionFacility is Dex {
         });
 
         // Approve adapter to spend RWA tokens
-        IERC20(rwaToken).approve(address(adapter), type(uint256).max);
+        IERC20(rwaToken).safeApprove(address(adapter), type(uint256).max);
 
         emit RWAConfigured(
             rwaToken,

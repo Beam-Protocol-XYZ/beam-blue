@@ -98,7 +98,7 @@ contract LiquidateIntegrationTest is BaseTest {
         vm.stopPrank();
 
         // We have to estimate the ratio after borrowing because the borrow rate depends on the utilization.
-        uint256 maxRatio = WAD + irm.borrowRate(marketParams, morpho.market(id)).wTaylorCompounded(elapsed);
+        uint256 maxRatio = Constants.WAD + irm.borrowRate(marketParams, morpho.market(id)).wTaylorCompounded(elapsed);
         // Sanity check: multiply maxBorrow by 2.
         uint256 maxBorrow = _maxBorrow(marketParams, BORROWER).wDivDown(maxRatio);
         // Should not omit too many tests because elapsed is reasonably bounded.
@@ -136,13 +136,13 @@ contract LiquidateIntegrationTest is BaseTest {
         uint256 borrowShares = morpho.borrowShares(id, BORROWER);
         uint256 liquidationIncentiveFactor = _liquidationIncentiveFactor(marketParams.lltv);
         uint256 maxSeized = params.amountBorrowed.wMulDown(liquidationIncentiveFactor)
-            .mulDivDown(ORACLE_PRICE_SCALE, params.priceCollateral);
+            .mulDivDown(Constants.ORACLE_PRICE_SCALE, params.priceCollateral);
         vm.assume(maxSeized != 0);
 
         amountSeized = bound(amountSeized, 1, Math.min(maxSeized, params.amountCollateral - 1));
 
         uint256 expectedRepaid =
-            amountSeized.mulDivUp(params.priceCollateral, ORACLE_PRICE_SCALE).wDivUp(liquidationIncentiveFactor);
+            amountSeized.mulDivUp(params.priceCollateral, Constants.ORACLE_PRICE_SCALE).wDivUp(liquidationIncentiveFactor);
         uint256 expectedRepaidShares =
             expectedRepaid.toSharesDown(morpho.totalBorrowAssets(id), morpho.totalBorrowShares(id));
 
@@ -194,7 +194,7 @@ contract LiquidateIntegrationTest is BaseTest {
 
         uint256 borrowShares = morpho.borrowShares(id, BORROWER);
         uint256 liquidationIncentiveFactor = _liquidationIncentiveFactor(marketParams.lltv);
-        uint256 maxSharesRepaid = (params.amountCollateral - 1).mulDivDown(params.priceCollateral, ORACLE_PRICE_SCALE)
+        uint256 maxSharesRepaid = (params.amountCollateral - 1).mulDivDown(params.priceCollateral, Constants.ORACLE_PRICE_SCALE)
             .wDivDown(liquidationIncentiveFactor)
             .toSharesDown(morpho.totalBorrowAssets(id), morpho.totalBorrowShares(id));
         vm.assume(maxSharesRepaid != 0);
@@ -203,7 +203,7 @@ contract LiquidateIntegrationTest is BaseTest {
 
         uint256 expectedRepaid = sharesRepaid.toAssetsUp(morpho.totalBorrowAssets(id), morpho.totalBorrowShares(id));
         uint256 expectedSeized = sharesRepaid.toAssetsDown(morpho.totalBorrowAssets(id), morpho.totalBorrowShares(id))
-            .wMulDown(liquidationIncentiveFactor).mulDivDown(ORACLE_PRICE_SCALE, params.priceCollateral);
+            .wMulDown(liquidationIncentiveFactor).mulDivDown(Constants.ORACLE_PRICE_SCALE, params.priceCollateral);
 
         loanToken.setBalance(LIQUIDATOR, params.amountBorrowed);
 
@@ -258,7 +258,7 @@ contract LiquidateIntegrationTest is BaseTest {
 
         params.liquidationIncentiveFactor = _liquidationIncentiveFactor(marketParams.lltv);
         params.expectedRepaid =
-            amountCollateral.mulDivUp(priceCollateral, ORACLE_PRICE_SCALE).wDivUp(params.liquidationIncentiveFactor);
+            amountCollateral.mulDivUp(priceCollateral, Constants.ORACLE_PRICE_SCALE).wDivUp(params.liquidationIncentiveFactor);
         vm.assume(params.expectedRepaid <= MAX_TEST_AMOUNT);
 
         amountBorrowed = bound(amountBorrowed, params.expectedRepaid, MAX_TEST_AMOUNT);
@@ -365,7 +365,7 @@ contract LiquidateIntegrationTest is BaseTest {
         morpho.borrow(marketParams, amountBorrowed, 0, BORROWER, BORROWER);
         vm.stopPrank();
 
-        oracle.setPrice(ORACLE_PRICE_SCALE - 0.01e18);
+        oracle.setPrice(Constants.ORACLE_PRICE_SCALE - 0.01e18);
 
         loanToken.setBalance(LIQUIDATOR, amountBorrowed);
 

@@ -215,7 +215,7 @@ contract Dex {
         tokenState[token].marketIds.push(marketId);
 
         // Approve Morpho to spend token
-        IERC20(token).approve(address(morpho), type(uint256).max);
+        IERC20(token).safeApprove(address(morpho), type(uint256).max);
 
         emit MarketWhitelisted(marketId, token);
     }
@@ -533,8 +533,9 @@ contract Dex {
 
         // Take input token and add to held balance (NOT localLiquidity - held is reserved for reverse swaps)
         IERC20(tokenIn).safeTransferFrom(msg.sender, address(this), amountIn);
-        pair.heldBalance += amountIn;
-        tokenState[tokenIn].totalHeldBalance += amountIn;
+        uint256 heldAmount = amountIn - fee;
+        pair.heldBalance += heldAmount;
+        tokenState[tokenIn].totalHeldBalance += heldAmount;
 
         // Source output token in order: local → Morpho supply → borrow
         uint256 remaining = amountOut;
@@ -553,11 +554,10 @@ contract Dex {
         if (remaining > 0 && outState.morphoSupplyShares > 0) {
             // Get max withdrawable
             Id marketId = outState.marketIds[0];
-            (uint128 totalSupply, uint128 totalSupplyShares, , , , ) = morpho
-                .market(marketId);
+            Market memory market = morpho.market(marketId);
             uint256 maxWithdraw = outState.morphoSupplyShares.toAssetsDown(
-                totalSupply,
-                totalSupplyShares
+                market.totalSupplyAssets,
+                market.totalSupplyShares
             );
             fromMorphoSupply = _min(remaining, maxWithdraw);
             if (fromMorphoSupply > 0) {
@@ -648,7 +648,7 @@ contract Dex {
         }
 
         // Update imbalance (reduces the need for reverse swaps)
-        pair.imbalance -= int256(amountOut);
+        pair.imbalance -= int256(netAmount);
 
         // Release held balance (tokenIn) to user - update totalHeldBalance not localLiquidity
         pair.heldBalance -= amountOut;
@@ -730,17 +730,15 @@ contract Dex {
     /// @notice Get available liquidity for borrowing
     function getAvailableLiquidity(
         address token
-    ) external view returns (uint256 local, uint256 morpho) {
+    ) external view returns (uint256 local, uint256 morphoLiquidity) {
         TokenState storage state = tokenState[token];
         local = state.localLiquidity;
 
         // Check Morpho market liquidity
         if (state.marketIds.length > 0) {
             Id marketId = state.marketIds[0];
-            (uint128 totalSupply, , uint128 totalBorrow, , , ) = morpho.market(
-                marketId
-            );
-            morpho = totalSupply > totalBorrow ? totalSupply - totalBorrow : 0;
+            Market memory market = morpho.market(marketId);
+            morphoLiquidity = market.totalSupplyAssets > market.totalBorrowAssets ? market.totalSupplyAssets - market.totalBorrowAssets : 0;
         }
     }
 
@@ -923,13 +921,12 @@ contract Dex {
             if (borrowShares == 0) continue;
 
             MarketParams memory params = morpho.idToMarketParams(marketId);
-            (, , uint128 totalBorrow, uint128 totalBorrowShares, , ) = morpho
-                .market(marketId);
+            Market memory market = morpho.market(marketId);
 
             // Calculate max repayable for this market
             uint256 maxRepay = borrowShares.toAssetsUp(
-                totalBorrow,
-                totalBorrowShares
+                market.totalBorrowAssets,
+                market.totalBorrowShares
             );
             uint256 toRepay = _min(remainingToRepay, maxRepay);
 
@@ -976,11 +973,9 @@ contract Dex {
 
         for (uint256 i = 0; i < markets.length; i++) {
             Id marketId = markets[i];
-            (uint128 totalSupply, , uint128 totalBorrow, , , ) = morpho.market(
-                marketId
-            );
-            uint256 available = totalSupply > totalBorrow
-                ? totalSupply - totalBorrow
+            Market memory market = morpho.market(marketId);
+            uint256 available = market.totalSupplyAssets > market.totalBorrowAssets
+                ? market.totalSupplyAssets - market.totalBorrowAssets
                 : 0;
             if (available >= amount) {
                 return marketId;
@@ -996,13 +991,12 @@ contract Dex {
 
         if (state.marketIds.length > 0) {
             Id marketId = state.marketIds[0];
-            (uint128 totalSupply, uint128 totalSupplyShares, , , , ) = morpho
-                .market(marketId);
+            Market memory market = morpho.market(marketId);
 
             if (state.morphoSupplyShares > 0) {
                 supplyValue = state.morphoSupplyShares.toAssetsDown(
-                    totalSupply,
-                    totalSupplyShares
+                    market.totalSupplyAssets,
+                    market.totalSupplyShares
                 );
             }
         }

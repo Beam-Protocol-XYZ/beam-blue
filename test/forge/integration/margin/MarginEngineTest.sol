@@ -1,21 +1,22 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.0;
 
-import "../../../lib/forge-std/src/Test.sol";
-import "../../../lib/forge-std/src/console.sol";
+import {Test} from "../../../../lib/forge-std/src/Test.sol";
+import {console} from "../../../../lib/forge-std/src/console.sol";
 
-import {Id, MarketParams, IMorpho} from "../../../src/interfaces/IMorpho.sol";
-import {IMarginEngine} from "../../../src/interfaces/IMarginEngine.sol";
-import {IStrategy} from "../../../src/interfaces/IStrategy.sol";
-import {MarginEngine} from "../../../src/margin/MarginEngine.sol";
-import {MorphoMarketStrategy} from "../../../src/margin/MorphoMarketStrategy.sol";
-import {ERC20Mock} from "../../../src/mocks/ERC20Mock.sol";
-import {OracleMock} from "../../../src/mocks/OracleMock.sol";
-import {IrmMock} from "../../../src/mocks/IrmMock.sol";
-import {Morpho} from "../../../src/Morpho.sol";
-import {MathLib, WAD} from "../../../src/libraries/MathLib.sol";
-import {SharesMathLib} from "../../../src/libraries/SharesMathLib.sol";
-import {MarketParamsLib} from "../../../src/libraries/MarketParamsLib.sol";
+import {Id, MarketParams, IMorpho} from "../../../../src/interfaces/IMorpho.sol";
+import {IMarginEngine} from "../../../../src/interfaces/IMarginEngine.sol";
+import {IStrategy} from "../../../../src/interfaces/IStrategy.sol";
+import {MarginEngine} from "../../../../src/margin/MarginEngine.sol";
+import {MorphoMarketStrategy} from "../../../../src/margin/MorphoMarketStrategy.sol";
+import {ERC20Mock} from "../../../../src/mocks/ERC20Mock.sol";
+import {OracleMock} from "../../../../src/mocks/OracleMock.sol";
+import {IrmMock} from "../../../../src/mocks/IrmMock.sol";
+import {Morpho} from "../../../../src/Morpho.sol";
+import {MathLib, WAD} from "../../../../src/libraries/MathLib.sol";
+import {SharesMathLib} from "../../../../src/libraries/SharesMathLib.sol";
+import {MarketParamsLib} from "../../../../src/libraries/MarketParamsLib.sol";
+import {Constants} from "../../helpers/Constants.sol";
 
 /// @title MarginEngineTest
 /// @notice Tests for MarginEngine with Morpho's exact health formula
@@ -26,7 +27,7 @@ contract MarginEngineTest is Test {
 
     /* ═══════════════════════════════════════════ CONSTANTS ═══════════════════════════════════════════ */
 
-    uint256 internal constant ORACLE_PRICE_SCALE = 1e36;
+    uint256 internal constant ORACLE_PRICE_SCALE = Constants.ORACLE_PRICE_SCALE;
     uint256 internal constant DEFAULT_LLTV = 0.9e18; // 90% LLTV
     uint256 internal constant DEFAULT_MAX_LEVERAGE = 10e18; // 10x
     uint256 internal constant MORPHO_LLTV = 0.8e18;
@@ -66,7 +67,7 @@ contract MarginEngineTest is Test {
         loanToken = new ERC20Mock();
         vm.label(address(loanToken), "LoanToken");
 
-        // Oracle: 1 collateral = 1 loan token (1:1)
+        // Oracle: 1 collateral = 1 loan token (1:1) - used by MarginEngine pair config
         pairOracle = new OracleMock();
         pairOracle.setPrice(ORACLE_PRICE_SCALE);
 
@@ -74,15 +75,19 @@ contract MarginEngineTest is Test {
 
         vm.startPrank(OWNER);
         morpho.enableIrm(address(irm));
-        morpho.enableLltv(MORPHO_LLTV);
+        // Enable lltv=0 for uncollateralized markets
+        morpho.enableLltv(0);
         vm.stopPrank();
 
+        // Create an UNCOLLATERALIZED Morpho market for MarginEngine borrowing
+        // This is required because Morpho's _isUncollateralizedMarketBorrower
+        // checks: collateralToken==0, oracle==0, lltv==0
         marketParams = MarketParams({
             loanToken: address(loanToken),
-            collateralToken: address(collateralToken),
-            oracle: address(pairOracle),
+            collateralToken: address(0),
+            oracle: address(0),
             irm: address(irm),
-            lltv: MORPHO_LLTV
+            lltv: 0
         });
         marketId = marketParams.id();
 
@@ -92,6 +97,7 @@ contract MarginEngineTest is Test {
         marginEngine = new MarginEngine(address(morpho), OWNER);
         vm.label(address(marginEngine), "MarginEngine");
 
+        // Whitelist MarginEngine as uncollateralized borrower
         vm.prank(OWNER);
         morpho.setUncollateralizedBorrower(
             marketId,
@@ -102,20 +108,20 @@ contract MarginEngineTest is Test {
         strategy = new MorphoMarketStrategy(address(morpho), marketId);
         vm.label(address(strategy), "Strategy");
 
-        // Configure margin pair with LLTV
+        // Configure margin pair — MarginEngine enforces its own LLTV and leverage checks
         vm.startPrank(OWNER);
         marginEngine.setMarginPairConfig(
             address(collateralToken),
             address(loanToken),
             address(pairOracle),
             marketId,
-            DEFAULT_LLTV, // 90% LLTV for margin
+            DEFAULT_LLTV, // 90% LLTV for margin health
             DEFAULT_MAX_LEVERAGE // 10x max leverage
         );
         marginEngine.setStrategyWhitelist(address(strategy), true);
         vm.stopPrank();
 
-        // Supply liquidity
+        // Supply liquidity into the uncollateralized market
         loanToken.setBalance(SUPPLIER, 1_000_000e18);
         vm.startPrank(SUPPLIER);
         loanToken.approve(address(morpho), type(uint256).max);
@@ -230,7 +236,7 @@ contract MarginEngineTest is Test {
         );
 
         // Drop collateral price 50%
-        pairOracle.setPrice(ORACLE_PRICE_SCALE / 2);
+        pairOracle.setPrice(Constants.ORACLE_PRICE_SCALE / 2);
 
         // Now: effectiveCollateral = 1000 + 8000 = 9000 (in collateral terms)
         // But collateral value in loan = 9000 * 0.5 = 4500 loan tokens
@@ -308,7 +314,7 @@ contract MarginEngineTest is Test {
         );
 
         // Make position unhealthy
-        pairOracle.setPrice(ORACLE_PRICE_SCALE / 2);
+        pairOracle.setPrice(Constants.ORACLE_PRICE_SCALE / 2);
         assertTrue(marginEngine.isLiquidatable(positionId));
 
         uint256 liquidatorBalBefore = collateralToken.balanceOf(LIQUIDATOR);
@@ -371,7 +377,7 @@ contract MarginEngineTest is Test {
 
     function test_getMaxBorrowable_withDifferentPrice() public {
         // 1 collateral = 2 loan tokens
-        pairOracle.setPrice(2 * ORACLE_PRICE_SCALE);
+        pairOracle.setPrice(2 * Constants.ORACLE_PRICE_SCALE);
 
         uint256 maxBorrow = marginEngine.getMaxBorrowable(
             address(collateralToken),

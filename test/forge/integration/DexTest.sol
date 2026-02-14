@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 pragma solidity ^0.8.0;
 
-import "../../lib/forge-std/src/Test.sol";
-import "../forge/BaseTest.sol";
-import {Dex} from "../../src/dex/Dex.sol";
-import {Id, MarketParams} from "../../src/interfaces/IMorpho.sol";
-import {MarketParamsLib} from "../../src/libraries/MarketParamsLib.sol";
+import {Test} from "../../../lib/forge-std/src/Test.sol";
+import {BaseTest} from "../BaseTest.sol";
+import {Dex} from "../../../src/dex/Dex.sol";
+import {Id, MarketParams} from "../../../src/interfaces/IMorpho.sol";
+import {MarketParamsLib} from "../../../src/libraries/MarketParamsLib.sol";
+import {ERC20Mock} from "../../../src/mocks/ERC20Mock.sol";
 
 contract DexTest is BaseTest {
     using MarketParamsLib for MarketParams;
@@ -57,6 +58,14 @@ contract DexTest is BaseTest {
         // Whitelist market in DEX
         vm.prank(OWNER);
         dex.whitelistMarket(usdcMarketId);
+
+        // Set oracle and whitelist pair
+        vm.startPrank(OWNER);
+        dex.setPairOracle(address(weth), address(usdc), address(oracle));
+        dex.setPairOracle(address(usdc), address(weth), address(oracle));
+        dex.whitelistPair(address(weth), address(usdc));
+        dex.whitelistPair(address(usdc), address(weth));
+        vm.stopPrank();
 
         // Setup approvals
         vm.startPrank(LP1);
@@ -125,9 +134,9 @@ contract DexTest is BaseTest {
         // Now simulate a swap that creates debt
         weth.setBalance(TAKER, 10e18);
         vm.prank(TAKER);
-        dex.swap(address(weth), address(usdc), 10e18, 0);
+        dex.swap(address(weth), address(usdc), 10e18, 0, false);
 
-        // LP deposits - should split: 50% supply, 25% repay, 25% liquidity
+        // LP deposits - should split: 40% supply, 40% repay, 20% liquidity
         uint256 depositAmount = 10000e18;
         usdc.setBalance(LP1, depositAmount);
 
@@ -175,7 +184,8 @@ contract DexTest is BaseTest {
             address(weth),
             address(usdc),
             wethAmount,
-            0
+            0,
+            false
         );
 
         assertGt(usdcReceived, 0, "should receive USDC");
@@ -194,18 +204,19 @@ contract DexTest is BaseTest {
         uint256 wethAmount = 1e18;
         weth.setBalance(TAKER, wethAmount);
         vm.prank(TAKER);
-        dex.swap(address(weth), address(usdc), wethAmount, 0);
+        dex.swap(address(weth), address(usdc), wethAmount, 0, false);
 
-        // Filler provides USDC, wants WETH
+        // Filler removes the WETH by providing USDC (Reverse Swap)
         uint256 usdcAmount = 0.9e18;
         usdc.setBalance(FILLER, usdcAmount);
 
         vm.prank(FILLER);
-        uint256 wethReceived = dex.fillSwap(
-            address(usdc),
+        uint256 wethReceived = dex.swap(
             address(weth),
+            address(usdc),
             usdcAmount,
-            0
+            0,
+            true
         );
 
         assertGt(wethReceived, 0, "should receive WETH");
@@ -225,7 +236,7 @@ contract DexTest is BaseTest {
             address(weth),
             address(usdc),
             amount,
-            true
+            false // forward: tokenIn -> tokenOut
         );
 
         assertGt(fee, 0, "fee should be positive");
@@ -243,7 +254,7 @@ contract DexTest is BaseTest {
         for (uint256 i = 0; i < 5; i++) {
             weth.setBalance(TAKER, 10e18);
             vm.prank(TAKER);
-            dex.swap(address(weth), address(usdc), 10e18, 0);
+            dex.swap(address(weth), address(usdc), 10e18, 0, false);
         }
 
         // Check imbalance
@@ -258,13 +269,13 @@ contract DexTest is BaseTest {
             address(usdc),
             address(weth),
             1000e18,
-            false
+            true // reverse filler
         );
         (, uint256 takerFee) = dex.quote(
             address(weth),
             address(usdc),
             1000e18,
-            true
+            false // forward taker
         );
 
         // Filler should get better rate when imbalance needs fillers
