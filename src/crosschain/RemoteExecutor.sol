@@ -78,6 +78,7 @@ contract RemoteExecutor {
     error NonceAlreadyUsed();
     error InsufficientRepaymentFunds();
     error InsufficientShares();
+    error ZeroAmount();
 
     /* ═══════════════════════════════════════════ MODIFIERS ═══════════════════════════════════════════ */
 
@@ -115,6 +116,16 @@ contract RemoteExecutor {
 
     /* ═══════════════════════════════════════════ ADMIN FUNCTIONS ═══════════════════════════════════════════ */
 
+    function withdrawEther(
+        address payable to,
+        uint256 amount
+    ) external onlyOwner {
+        if (to == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
+        (bool success, ) = to.call{value: amount}("");
+        require(success, "ETH transfer failed");
+    }
+
     function setAdapter(address _adapter) external onlyOwner {
         if (_adapter == address(0)) revert ZeroAddress();
         adapter = ICrossChainAdapter(_adapter);
@@ -129,11 +140,14 @@ contract RemoteExecutor {
     function whitelistMarket(Id marketId) external onlyOwner {
         if (isWhitelistedMarket[marketId]) revert MarketAlreadyWhitelisted();
 
-        MarketParams memory params = morpho.idToMarketParams(marketId);
-        IERC20(params.loanToken).safeApprove(address(morpho), type(uint256).max);
-
         isWhitelistedMarket[marketId] = true;
         whitelistedMarkets.push(marketId);
+
+        MarketParams memory params = morpho.idToMarketParams(marketId);
+        IERC20(params.loanToken).safeApprove(
+            address(morpho),
+            type(uint256).max
+        );
 
         emit MarketWhitelisted(marketId);
     }
@@ -195,7 +209,7 @@ contract RemoteExecutor {
         uint32 srcChainId,
         address srcSender,
         bytes calldata payload
-    ) external whenNotPaused nonReentrant {
+    ) external nonReentrant whenNotPaused {
         if (msg.sender != address(adapter)) revert UnauthorizedCaller();
         if (srcSender != positionManagers[srcChainId])
             revert UnauthorizedCaller();

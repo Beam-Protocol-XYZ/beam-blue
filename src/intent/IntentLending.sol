@@ -288,7 +288,7 @@ contract IntentLending is IIntentLending {
         // Validate loan amount
         uint256 lenderRemaining = lendIntent.amount - lendIntent.filledAmount;
         if (loanAmount > lenderRemaining) revert AmountTooSmall();
-        if (loanAmount > borrowIntent.amount) revert AmountTooSmall();
+        if (loanAmount != borrowIntent.amount) revert AmountMismatch();
         if (loanAmount < lendIntent.minAmount) revert AmountTooSmall();
 
         // Validate collateral is accepted
@@ -453,7 +453,19 @@ contract IntentLending is IIntentLending {
         IERC20(loan.loanToken).safeTransferFrom(msg.sender, loan.lender, debt);
 
         // Liquidator receives collateral with bonus
-        uint256 collateralToSeize = loan.collateralAmount;
+        address oracle = oracles[loan.collateralToken][loan.loanToken];
+        if (oracle == address(0)) revert ZeroAddress();
+
+        uint256 price = IOracle(oracle).price();
+        uint256 valueToSeize = (debt * LIQUIDATION_INCENTIVE) / 1e18;
+        uint256 collateralToSeize = (valueToSeize * ORACLE_PRICE_SCALE) / price;
+
+        if (collateralToSeize > loan.collateralAmount) {
+            collateralToSeize = loan.collateralAmount;
+        }
+
+        loan.collateralAmount -= collateralToSeize;
+
         IERC20(loan.collateralToken).safeTransfer(
             msg.sender,
             collateralToSeize
@@ -474,13 +486,15 @@ contract IntentLending is IIntentLending {
         uint256 outstanding = getOutstandingDebt(loanId);
         if (loan.repaidAmount < outstanding) revert LoanNotActive();
 
-        // Return collateral to borrower
-        IERC20(loan.collateralToken).safeTransfer(
-            msg.sender,
-            loan.collateralAmount
-        );
+        uint256 amountToClaim = loan.collateralAmount;
+        if (amountToClaim == 0) revert ZeroAmount();
 
-        emit CollateralClaimed(loanId, msg.sender, loan.collateralAmount);
+        loan.collateralAmount = 0;
+
+        // Return collateral to borrower
+        IERC20(loan.collateralToken).safeTransfer(msg.sender, amountToClaim);
+
+        emit CollateralClaimed(loanId, msg.sender, amountToClaim);
     }
 
     /* ═══════════════════════════════════════════ VIEW FUNCTIONS ═══════════════════════════════════════════ */

@@ -113,6 +113,7 @@ interface IIntentLending {
     error InsufficientCollateral();
     error RateMismatch();
     error CollateralNotAccepted();
+    error AmountMismatch();
     error AmountTooSmall();
     error LoanNotActive();
     error LoanNotExpired();

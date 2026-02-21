@@ -186,7 +186,10 @@ contract MarginEngine is IMarginEngine {
         uint8 decimals
     ) external onlyOwner {
         if (token == address(0) || oracle == address(0)) revert ZeroAddress();
-        require(liquidationThreshold > 0 && liquidationThreshold < WAD, "invalid liq threshold");
+        require(
+            liquidationThreshold > 0 && liquidationThreshold < WAD,
+            "invalid liq threshold"
+        );
         require(maxLeverage > 0, "Max leverage must be > 0");
 
         CollateralConfig storage config = collateralConfigs[token];
@@ -219,7 +222,8 @@ contract MarginEngine is IMarginEngine {
         address oracle,
         uint8 decimals
     ) external onlyOwner {
-        if (loanToken == address(0) || oracle == address(0)) revert ZeroAddress();
+        if (loanToken == address(0) || oracle == address(0))
+            revert ZeroAddress();
 
         LoanMarketConfig storage config = loanMarketConfigs[loanToken];
         if (!config.enabled) {
@@ -263,7 +267,7 @@ contract MarginEngine is IMarginEngine {
         uint256 collateralAmount,
         uint256 borrowAmount,
         address strategy
-    ) external whenNotPaused nonReentrant returns (bytes32 positionId) {
+    ) external nonReentrant whenNotPaused returns (bytes32 positionId) {
         if (collateralAmount < MIN_COLLATERAL) revert ZeroAmount();
         if (borrowAmount == 0) revert ZeroAmount();
 
@@ -291,7 +295,8 @@ contract MarginEngine is IMarginEngine {
             msg.sender,
             collateralToken,
             loanToken,
-            strategy
+            strategy,
+            userPositionIds[msg.sender].length
         );
         Position storage pos = positions[positionId];
         if (pos.active) revert PositionNotActive();
@@ -325,11 +330,11 @@ contract MarginEngine is IMarginEngine {
         pos.user = msg.sender;
         pos.collateralToken = collateralToken;
         pos.loanToken = loanToken;
-        pos.collateralAmount = uint128(collateralAmount);
-        pos.borrowShares = uint128(borrowShares);
+        pos.collateralAmount = collateralAmount.toUint128();
+        pos.borrowShares = borrowShares.toUint128();
         pos.strategy = strategy;
-        pos.strategyShares = uint128(strategyShares);
-        pos.lastUpdate = uint128(block.timestamp);
+        pos.strategyShares = strategyShares.toUint128();
+        pos.lastUpdate = uint256(block.timestamp).toUint128();
         pos.active = true;
 
         userPositionIds[msg.sender].push(positionId);
@@ -366,7 +371,7 @@ contract MarginEngine is IMarginEngine {
             address(this),
             amount
         );
-        pos.collateralAmount += uint128(amount);
+        pos.collateralAmount += amount.toUint128();
 
         emit CollateralDeposited(
             positionId,
@@ -387,7 +392,7 @@ contract MarginEngine is IMarginEngine {
         if (!pos.active) revert PositionNotActive();
         if (pos.collateralAmount < amount) revert InsufficientCollateral();
 
-        uint128 newCollateral = pos.collateralAmount - uint128(amount);
+        uint128 newCollateral = pos.collateralAmount - amount.toUint128();
 
         // Check position remains healthy with Morpho's formula
         if (pos.borrowShares > 0) {
@@ -410,7 +415,7 @@ contract MarginEngine is IMarginEngine {
     function increasePosition(
         bytes32 positionId,
         uint256 additionalBorrow
-    ) external whenNotPaused nonReentrant {
+    ) external nonReentrant whenNotPaused {
         if (additionalBorrow == 0) revert ZeroAmount();
 
         Position storage pos = positions[positionId];
@@ -470,9 +475,9 @@ contract MarginEngine is IMarginEngine {
             address(this)
         );
 
-        pos.borrowShares += uint128(newShares);
-        pos.strategyShares += uint128(additionalStrategyShares);
-        pos.lastUpdate = uint128(block.timestamp);
+        pos.borrowShares += newShares.toUint128();
+        pos.strategyShares += additionalStrategyShares.toUint128();
+        pos.lastUpdate = uint256(block.timestamp).toUint128();
 
         emit PositionIncreased(
             positionId,
@@ -528,9 +533,9 @@ contract MarginEngine is IMarginEngine {
             ""
         );
 
-        pos.borrowShares -= uint128(actualSharesRepaid);
-        pos.strategyShares -= uint128(strategySharesNeeded);
-        pos.lastUpdate = uint128(block.timestamp);
+        pos.borrowShares -= actualSharesRepaid.toUint128();
+        pos.strategyShares -= strategySharesNeeded.toUint128();
+        pos.lastUpdate = uint256(block.timestamp).toUint128();
 
         // Return excess to user
         if (assetsReceived > assetsRepaid) {
@@ -627,7 +632,7 @@ contract MarginEngine is IMarginEngine {
     function liquidate(
         bytes32 positionId,
         uint256 maxDebtToRepay
-    ) external whenNotPaused nonReentrant {
+    ) external nonReentrant whenNotPaused {
         Position storage pos = positions[positionId];
         if (!pos.active) revert PositionNotActive();
 
@@ -702,12 +707,36 @@ contract MarginEngine is IMarginEngine {
             : pos.collateralAmount;
 
         // Update position
-        pos.borrowShares -= uint128(sharesRepaid);
-        pos.strategyShares -= uint128(strategySharesNeeded);
-        pos.collateralAmount -= uint128(collateralToSeize);
+        pos.borrowShares -= sharesRepaid.toUint128();
+        pos.strategyShares -= strategySharesNeeded.toUint128();
+        pos.collateralAmount -= collateralToSeize.toUint128();
 
         // Check for bad debt
         if (pos.collateralAmount == 0 && pos.borrowShares > 0) {
+            uint256 reserves = protocolReserves[pos.loanToken];
+            if (reserves > 0) {
+                Market memory currentMarket = morpho.market(
+                    pairConfig.morphoMarketId
+                );
+                uint256 remainingDebt = uint256(pos.borrowShares).toAssetsUp(
+                    currentMarket.totalBorrowAssets,
+                    currentMarket.totalBorrowShares
+                );
+
+                if (remainingDebt > 0) {
+                    uint256 amountToCover = remainingDebt > reserves
+                        ? reserves
+                        : remainingDebt;
+                    protocolReserves[pos.loanToken] -= amountToCover;
+                    morpho.repay(
+                        marketParams,
+                        amountToCover,
+                        0,
+                        address(this),
+                        ""
+                    );
+                }
+            }
             // Bad debt: clear the position
             pos.borrowShares = 0;
             pos.active = false;
@@ -868,11 +897,18 @@ contract MarginEngine is IMarginEngine {
         address user,
         address collateralToken,
         address loanToken,
-        address strategy
+        address strategy,
+        uint256 index
     ) internal pure returns (bytes32) {
         return
             keccak256(
-                abi.encodePacked(user, collateralToken, loanToken, strategy)
+                abi.encodePacked(
+                    user,
+                    collateralToken,
+                    loanToken,
+                    strategy,
+                    index
+                )
             );
     }
 
@@ -975,7 +1011,9 @@ contract MarginEngine is IMarginEngine {
         address collateralToken,
         address loanToken
     ) internal {
-        CollateralConfig storage collConfig = collateralConfigs[collateralToken];
+        CollateralConfig storage collConfig = collateralConfigs[
+            collateralToken
+        ];
         LoanMarketConfig storage loanConfig = loanMarketConfigs[loanToken];
 
         bytes32 pairKey = _getPairKey(collateralToken, loanToken);
@@ -993,8 +1031,9 @@ contract MarginEngine is IMarginEngine {
         pair.lltv = collConfig.liquidationThreshold;
         pair.maxLeverage = collConfig.maxLeverage;
         // Calculate liquidation incentive factor from lltv
-        pair.liquidationIncentiveFactor = _liquidationIncentiveFactor(pair.lltv);
+        pair.liquidationIncentiveFactor = _liquidationIncentiveFactor(
+            pair.lltv
+        );
         pair.enabled = true;
     }
 }
-

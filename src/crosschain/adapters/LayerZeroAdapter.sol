@@ -69,6 +69,7 @@ contract LayerZeroAdapter is ICrossChainAdapter {
     error NotAuthorized();
     error UntrustedRemote();
     error ZeroAddress();
+    error ZeroAmount();
 
     /* ═══════════════════════════════════════════ MODIFIERS ═══════════════════════════════════════════ */
 
@@ -98,6 +99,16 @@ contract LayerZeroAdapter is ICrossChainAdapter {
     }
 
     /* ═══════════════════════════════════════════ ADMIN FUNCTIONS ═══════════════════════════════════════════ */
+
+    function withdrawEther(
+        address payable to,
+        uint256 amount
+    ) external onlyOwner {
+        if (to == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
+        (bool success, ) = to.call{value: amount}("");
+        require(success, "ETH transfer failed");
+    }
 
     function setTrustedRemote(uint32 eid, address remote) external onlyOwner {
         trustedRemotes[eid] = remote;

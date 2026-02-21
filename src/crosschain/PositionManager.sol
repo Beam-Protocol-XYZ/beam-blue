@@ -9,6 +9,7 @@ import {CrossChainTypes} from "../interfaces/CrossChainTypes.sol";
 import {SafeTransferLib} from "../libraries/SafeTransferLib.sol";
 import {MathLib, WAD} from "../libraries/MathLib.sol";
 import {SharesMathLib} from "../libraries/SharesMathLib.sol";
+import {UtilsLib} from "../libraries/UtilsLib.sol";
 
 /// @title PositionManager
 /// @notice Source-chain contract for cross-chain borrowing with full Morpho-style position tracking
@@ -18,6 +19,7 @@ contract PositionManager {
     using MathLib for uint256;
     using MathLib for uint128;
     using SharesMathLib for uint256;
+    using UtilsLib for uint256;
 
     /* ═══════════════════════════════════════════ CONSTANTS ═══════════════════════════════════════════ */
 
@@ -74,6 +76,8 @@ contract PositionManager {
         uint64 nonce;
         uint256 timestamp;
         bool pending;
+        address liquidator;
+        uint256 collateralToSeize;
     }
 
     /* ═══════════════════════════════════════════ STORAGE ═══════════════════════════════════════════ */
@@ -216,6 +220,16 @@ contract PositionManager {
 
     /* ═══════════════════════════════════════════ ADMIN FUNCTIONS ═══════════════════════════════════════════ */
 
+    function withdrawEther(
+        address payable to,
+        uint256 amount
+    ) external onlyOwner {
+        if (to == address(0)) revert ZeroAddress();
+        if (amount == 0) revert ZeroAmount();
+        (bool success, ) = to.call{value: amount}("");
+        require(success, "ETH transfer failed");
+    }
+
     function setAdapter(address _adapter) external onlyOwner {
         if (_adapter == address(0)) revert ZeroAddress();
         adapter = ICrossChainAdapter(_adapter);
@@ -292,7 +306,7 @@ contract PositionManager {
         uint256 amount,
         uint32 remoteChainId,
         Id remoteMarketId
-    ) external whenNotPaused nonReentrant returns (bytes32 positionId) {
+    ) external nonReentrant whenNotPaused returns (bytes32 positionId) {
         if (amount == 0) revert ZeroAmount();
 
         CollateralConfig storage collConfig = collateralConfigs[
@@ -323,12 +337,12 @@ contract PositionManager {
             pos.collateralToken = collateralToken;
             pos.remoteChainId = remoteChainId;
             pos.remoteMarketId = remoteMarketId;
-            pos.lastInterestAccrual = uint128(block.timestamp);
+            pos.lastInterestAccrual = uint256(block.timestamp).toUint128();
             pos.active = true;
             userPositionIds[msg.sender].push(positionId);
         }
 
-        pos.collateralAmount += uint128(amount);
+        pos.collateralAmount += amount.toUint128();
 
         emit CollateralDeposited(
             positionId,
@@ -353,7 +367,7 @@ contract PositionManager {
         // Accrue interest before health check
         _accrueInterest(positionId);
 
-        uint128 newCollateral = pos.collateralAmount - uint128(amount);
+        uint128 newCollateral = pos.collateralAmount - amount.toUint128();
 
         // Check position remains healthy after withdrawal
         if (pos.borrowShares > 0 && newCollateral > 0) {
@@ -388,7 +402,7 @@ contract PositionManager {
         bytes32 positionId,
         uint256 amount,
         address receiver
-    ) external payable whenNotPaused nonReentrant returns (uint64 nonce) {
+    ) external payable nonReentrant whenNotPaused returns (uint64 nonce) {
         if (amount == 0) revert ZeroAmount();
         if (receiver == address(0)) revert ZeroAddress();
 
@@ -436,7 +450,9 @@ contract PositionManager {
             requestedAmount: amount,
             nonce: nonce,
             timestamp: block.timestamp,
-            pending: true
+            pending: true,
+            liquidator: address(0),
+            collateralToSeize: 0
         });
 
         bytes memory payload = abi.encode(
@@ -463,7 +479,7 @@ contract PositionManager {
     function repayRemote(
         bytes32 positionId,
         uint256 shares // Repay by shares for precision
-    ) external payable whenNotPaused nonReentrant {
+    ) external payable nonReentrant whenNotPaused {
         Position storage pos = positions[positionId];
         if (pos.user != msg.sender) revert UnauthorizedCaller();
         if (!pos.active) revert PositionNotActive();
@@ -492,7 +508,9 @@ contract PositionManager {
             requestedAmount: sharesToRepay,
             nonce: nonce,
             timestamp: block.timestamp,
-            pending: true
+            pending: true,
+            liquidator: address(0),
+            collateralToSeize: 0
         });
 
         bytes memory payload = abi.encode(
@@ -517,10 +535,11 @@ contract PositionManager {
     function liquidate(
         bytes32 positionId,
         uint256 repayShares
-    ) external payable whenNotPaused nonReentrant {
+    ) external payable nonReentrant whenNotPaused {
         Position storage pos = positions[positionId];
         if (!pos.active) revert PositionNotActive();
         if (pos.borrowShares == 0) revert ZeroAmount();
+        if (pendingRequests[positionId].pending) revert PendingRequestExists();
 
         _accrueInterest(positionId);
 
@@ -582,12 +601,6 @@ contract PositionManager {
         // Cap at available collateral (bad debt case)
         collateralToSeize = _min(collateralToSeize, pos.collateralAmount);
 
-        // Update position
-        pos.collateralAmount -= uint128(collateralToSeize);
-
-        // Mark shares as being liquidated (will be cleared on ACK)
-        pos.borrowShares -= uint128(sharesToLiquidate);
-
         // Send liquidation repay to remote
         uint64 nonce = ++messageNonce;
         CrossChainTypes.RepayRequest memory request = CrossChainTypes
@@ -600,6 +613,17 @@ contract PositionManager {
                 nonce: nonce
             });
 
+        pendingRequests[positionId] = PendingRequest({
+            positionId: positionId,
+            requestType: CrossChainTypes.MessageType.LIQUIDATE_REPAY,
+            requestedAmount: sharesToLiquidate,
+            nonce: nonce,
+            timestamp: block.timestamp,
+            pending: true,
+            liquidator: msg.sender,
+            collateralToSeize: collateralToSeize
+        });
+
         bytes memory payload = abi.encode(
             CrossChainTypes.MessageType.LIQUIDATE_REPAY,
             abi.encode(request)
@@ -611,15 +635,7 @@ contract PositionManager {
             ""
         );
 
-        // Transfer collateral to liquidator
-        IERC20(pos.collateralToken).safeTransfer(msg.sender, collateralToSeize);
-
-        emit PositionLiquidated(
-            positionId,
-            msg.sender,
-            debtToRepay,
-            collateralToSeize
-        );
+        emit RepayRequested(positionId, sharesToLiquidate);
     }
 
     /* ═══════════════════════════════════════════ CROSS-CHAIN SYNC ═══════════════════════════════════════════ */
@@ -685,7 +701,7 @@ contract PositionManager {
         config.totalBorrowAssets = totalBorrowAssets;
         config.totalBorrowShares = totalBorrowShares;
         config.borrowRate = borrowRate;
-        config.lastRemoteUpdate = uint128(block.timestamp);
+        config.lastRemoteUpdate = uint256(block.timestamp).toUint128();
 
         emit MarketStateSynced(
             marketKey,
@@ -720,8 +736,8 @@ contract PositionManager {
         Position storage pos = positions[ack.positionId];
 
         if (ack.success) {
-            pos.borrowShares += uint128(ack.borrowShares);
-            pos.lastInterestAccrual = uint128(block.timestamp);
+            pos.borrowShares += ack.borrowShares.toUint128();
+            pos.lastInterestAccrual = uint256(block.timestamp).toUint128();
             emit BorrowConfirmed(
                 ack.positionId,
                 ack.borrowShares,
@@ -747,10 +763,44 @@ contract PositionManager {
 
     function _handleRepayAck(CrossChainTypes.RepayAck memory ack) internal {
         Position storage pos = positions[ack.positionId];
+        PendingRequest memory pending = pendingRequests[ack.positionId];
+        if (!pending.pending) revert NoPendingRequest();
 
         if (ack.success) {
-            // Shares already deducted in liquidate() or we track here for normal repay
-            pos.lastInterestAccrual = uint128(block.timestamp);
+            pos.borrowShares -= ack.sharesRepaid.toUint128();
+            pos.lastInterestAccrual = uint256(block.timestamp).toUint128();
+
+            if (
+                pending.requestType ==
+                CrossChainTypes.MessageType.LIQUIDATE_REPAY
+            ) {
+                uint256 actualCollateralToSeize = pending.collateralToSeize;
+                if (
+                    ack.sharesRepaid < pending.requestedAmount &&
+                    pending.requestedAmount > 0
+                ) {
+                    actualCollateralToSeize =
+                        (pending.collateralToSeize * ack.sharesRepaid) /
+                        pending.requestedAmount;
+                }
+
+                if (actualCollateralToSeize > pos.collateralAmount)
+                    actualCollateralToSeize = pos.collateralAmount;
+
+                pos.collateralAmount -= actualCollateralToSeize.toUint128();
+                IERC20(pos.collateralToken).safeTransfer(
+                    pending.liquidator,
+                    actualCollateralToSeize
+                );
+
+                emit PositionLiquidated(
+                    ack.positionId,
+                    pending.liquidator,
+                    ack.amountRepaid,
+                    actualCollateralToSeize
+                );
+            }
+
             emit RepayConfirmed(
                 ack.positionId,
                 ack.sharesRepaid,
@@ -822,7 +872,7 @@ contract PositionManager {
 
         // Interest accrual happens on remote Morpho
         // We just update our local timestamp for tracking
-        pos.lastInterestAccrual = uint128(block.timestamp);
+        pos.lastInterestAccrual = uint256(block.timestamp).toUint128();
     }
 
     function _getPositionId(
@@ -898,7 +948,7 @@ contract PositionManager {
                 uint256 interest = uint256(market.totalBorrowAssets).wMulDown(
                     market.borrowRate
                 ) * elapsed;
-                totalBorrowAssets += uint128(interest);
+                totalBorrowAssets += interest.toUint128();
             }
         }
 
@@ -924,7 +974,7 @@ contract PositionManager {
                 uint256 interest = uint256(market.totalBorrowAssets).wMulDown(
                     market.borrowRate
                 ) * elapsed;
-                totalBorrowAssets += uint128(interest);
+                totalBorrowAssets += interest.toUint128();
             }
         }
 

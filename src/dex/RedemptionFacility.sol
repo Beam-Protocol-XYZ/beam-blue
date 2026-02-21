@@ -286,19 +286,38 @@ contract RedemptionFacility is Dex {
             redemption.adapterRequestId
         );
 
+        // Handle surplus or shortfall before repaying to ensure accounting is correct
+        uint256 surplus = 0;
+        if (redeemedAmount > redemption.borrowedAmount) {
+            surplus = redeemedAmount - redemption.borrowedAmount;
+            tokenState[config.outputToken].interestReserve += surplus;
+        } else if (redeemedAmount < redemption.borrowedAmount) {
+            uint256 shortfall = redemption.borrowedAmount - redeemedAmount;
+            TokenState storage state = tokenState[config.outputToken];
+            if (state.protocolFees >= shortfall) {
+                state.protocolFees -= shortfall;
+            } else {
+                uint256 remaining = shortfall - state.protocolFees;
+                state.protocolFees = 0;
+                if (state.interestReserve >= remaining) {
+                    state.interestReserve -= remaining;
+                } else {
+                    remaining -= state.interestReserve;
+                    state.interestReserve = 0;
+                    if (state.localLiquidity >= remaining) {
+                        state.localLiquidity -= remaining;
+                    } else {
+                        state.localLiquidity = 0;
+                    }
+                }
+            }
+        }
+
         // Repay Morpho loan
         uint256 repaidAmount = _repayMorpho(
             config.outputToken,
             redemption.borrowedAmount
         );
-
-        // Handle surplus (if redeemed > borrowed)
-        uint256 surplus = 0;
-        if (redeemedAmount > repaidAmount) {
-            surplus = redeemedAmount - repaidAmount;
-            // Add surplus to interest reserve (or could return to user)
-            tokenState[config.outputToken].interestReserve += surplus;
-        }
 
         // Mark as settled
         redemption.settled = true;
@@ -337,6 +356,35 @@ contract RedemptionFacility is Dex {
             );
         }
 
+        // Handle surplus or shortfall
+        uint256 surplus = 0;
+        if (redeemedAmount > redemption.borrowedAmount) {
+            surplus = redeemedAmount - redemption.borrowedAmount;
+            tokenState[config.outputToken].interestReserve += surplus;
+        } else if (
+            redeemedAmount > 0 && redeemedAmount < redemption.borrowedAmount
+        ) {
+            uint256 shortfall = redemption.borrowedAmount - redeemedAmount;
+            TokenState storage state = tokenState[config.outputToken];
+            if (state.protocolFees >= shortfall) {
+                state.protocolFees -= shortfall;
+            } else {
+                uint256 remaining = shortfall - state.protocolFees;
+                state.protocolFees = 0;
+                if (state.interestReserve >= remaining) {
+                    state.interestReserve -= remaining;
+                } else {
+                    remaining -= state.interestReserve;
+                    state.interestReserve = 0;
+                    if (state.localLiquidity >= remaining) {
+                        state.localLiquidity -= remaining;
+                    } else {
+                        state.localLiquidity = 0;
+                    }
+                }
+            }
+        }
+
         // Repay what we can
         uint256 repaidAmount = 0;
         if (redeemedAmount > 0) {
@@ -348,7 +396,9 @@ contract RedemptionFacility is Dex {
 
         // Reward liquidator
         uint256 reward = (redeemedAmount * LIQUIDATION_BONUS_BPS) / BPS_SCALE;
-        if (reward > 0 && redeemedAmount > repaidAmount + reward) {
+        if (
+            reward > 0 && redeemedAmount >= redemption.borrowedAmount + reward
+        ) {
             IERC20(config.outputToken).safeTransfer(msg.sender, reward);
         }
 
