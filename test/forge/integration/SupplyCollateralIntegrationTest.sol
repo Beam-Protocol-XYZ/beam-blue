@@ -6,7 +6,10 @@ import "../BaseTest.sol";
 contract SupplyCollateralIntegrationTest is BaseTest {
     using MorphoLib for IMorpho;
 
-    function testSupplyCollateralMarketNotCreated(MarketParams memory marketParamsFuzz, uint256 amount) public {
+    function testSupplyCollateralMarketNotCreated(
+        MarketParams memory marketParamsFuzz,
+        uint256 amount
+    ) public {
         vm.assume(neq(marketParamsFuzz, marketParams));
 
         vm.prank(SUPPLIER);
@@ -28,9 +31,13 @@ contract SupplyCollateralIntegrationTest is BaseTest {
         morpho.supplyCollateral(marketParams, amount, address(0), hex"");
     }
 
-    function testSupplyCollateralTokenNotCreated(uint256 amount, address token) public {
+    function testSupplyCollateralTokenNotCreated(
+        uint256 amount,
+        address token
+    ) public {
         amount = bound(amount, 1, MAX_TEST_AMOUNT);
 
+        vm.assume(token != address(0));
         vm.assume(token.code.length == 0);
 
         marketParams.collateralToken = token;
@@ -53,6 +60,10 @@ contract SupplyCollateralIntegrationTest is BaseTest {
 
         assertEq(morpho.collateral(id, ONBEHALF), amount, "collateral");
         assertEq(collateralToken.balanceOf(SUPPLIER), 0, "SUPPLIER balance");
-        assertEq(collateralToken.balanceOf(address(morpho)), amount, "morpho balance");
+        assertEq(
+            collateralToken.balanceOf(address(morpho)),
+            amount,
+            "morpho balance"
+        );
     }
 }

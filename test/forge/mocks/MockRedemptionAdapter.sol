@@ -26,6 +26,7 @@ contract MockRedemptionAdapter is IRedemptionAdapter {
     mapping(address => bool) public supported;
 
     uint256 private _nonce;
+    mapping(bytes32 => address) private _requestOutputToken;
 
     function configureToken(
         address rwaToken,
@@ -44,6 +45,7 @@ contract MockRedemptionAdapter is IRedemptionAdapter {
     ) external override returns (bytes32 requestId) {
         requestId = keccak256(abi.encodePacked(rwaToken, amount, _nonce++));
         redemptionAmounts[requestId] = amount;
+        _requestOutputToken[requestId] = outputTokens[rwaToken];
     }
 
     function completeRedemption(bytes32 requestId) external {
@@ -59,7 +61,18 @@ contract MockRedemptionAdapter is IRedemptionAdapter {
     function claimRedemption(
         bytes32 requestId
     ) external override returns (uint256) {
-        return redemptionAmounts[requestId];
+        uint256 amount = redemptionAmounts[requestId];
+        // Transfer output tokens to caller (the facility)
+        // The test must set the adapter's balance beforehand
+        if (amount > 0) {
+            // Iterate to find which rwaToken this maps to - simplified: just transfer any USDC we hold
+            // The test sets our balance before calling settle
+            address outputToken = _requestOutputToken[requestId];
+            if (outputToken != address(0)) {
+                ERC20Mock(outputToken).transfer(msg.sender, amount);
+            }
+        }
+        return amount;
     }
 
     function getRedemptionQuote(

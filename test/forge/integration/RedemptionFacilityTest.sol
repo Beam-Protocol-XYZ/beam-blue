@@ -48,12 +48,14 @@ contract RedemptionFacilityTest is BaseTest {
         usdcMarketId = usdcMarket.id();
 
         // Whitelist facility as uncollateralized borrower
+        vm.prank(OWNER);
         morpho.setUncollateralizedBorrower(usdcMarketId, address(0), true); // Will set real address after deploy
 
         // Deploy facility
         facility = new RedemptionFacility(address(morpho), OWNER);
 
         // Whitelist facility as uncollateralized borrower
+        vm.prank(OWNER);
         morpho.setUncollateralizedBorrower(
             usdcMarketId,
             address(facility),

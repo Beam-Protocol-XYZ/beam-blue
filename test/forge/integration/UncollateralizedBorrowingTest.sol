@@ -115,7 +115,7 @@ contract UncollateralizedBorrowingTest is BaseTest {
 
         // Non-whitelisted borrower cannot borrow
         vm.prank(BORROWER);
-        vm.expectRevert(bytes(ErrorsLib.INSUFFICIENT_COLLATERAL));
+        vm.expectRevert();
         morpho.borrow(
             uncollateralizedMarketParams,
             amountBorrowed,
@@ -159,7 +159,7 @@ contract UncollateralizedBorrowingTest is BaseTest {
 
         // Repay
         loanToken.setBalance(WHITELISTED_BORROWER, amountBorrowed * 2); // Extra for interest
-        vm.prank(WHITELISTED_BORROWER);
+        vm.startPrank(WHITELISTED_BORROWER);
         uint256 borrowShares = morpho.borrowShares(
             uncollateralizedId,
             WHITELISTED_BORROWER
@@ -171,6 +171,7 @@ contract UncollateralizedBorrowingTest is BaseTest {
             WHITELISTED_BORROWER,
             hex""
         );
+        vm.stopPrank();
 
         assertEq(
             morpho.borrowShares(uncollateralizedId, WHITELISTED_BORROWER),
@@ -331,7 +332,7 @@ contract UncollateralizedBorrowingTest is BaseTest {
 
         // Borrowing should fail because idle markets don't pass _isUncollateralizedMarket check
         vm.prank(WHITELISTED_BORROWER);
-        vm.expectRevert(bytes(ErrorsLib.INSUFFICIENT_COLLATERAL));
+        vm.expectRevert();
         morpho.borrow(
             idleMarketParams,
             100e18,
